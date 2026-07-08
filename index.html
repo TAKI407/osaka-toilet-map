@@ -373,6 +373,12 @@ function refresh(){
   });
   drawMarkers();
 }
+function focusOn(lat,lng,zoom){
+  // ボトムパネルに隠れないよう、パネル高さの半分だけ中心を下へずらす
+  const sh=$('sheet')?$('sheet').offsetHeight:0;
+  const pt=map.project([lat,lng],zoom).add([0,sh/2]);
+  map.setView(map.unproject(pt,zoom),zoom);
+}
 function select(i,openDetail){
   selIdx=i; const it=ALL[i];
   refresh();
@@ -398,7 +404,7 @@ function select(i,openDetail){
     $('bandN').textContent = lang==='ja'? it.name : (it.roma||it.name);
     $('bandD').textContent = d?fmtD(d):'—';
     $('bandW').textContent = d?walkMin(d):'';
-    map.setView([it.lat,it.lng],17);
+    focusOn(it.lat,it.lng,17);
     $('navApple').onclick=()=>window.open(`https://maps.apple.com/?daddr=${it.lat},${it.lng}&dirflg=w`,'_blank');
     $('navGoogle').onclick=()=>window.open(`https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}&travelmode=walking`,'_blank');
   }
