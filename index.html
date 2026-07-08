@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- ▼テスト公開用: 本番ドメイン公開時にこの1行を必ず削除（検索エンジンに載らなくなるため） -->
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1a1a2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Osaka Toilet Map 大阪トイレマップ</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{
+  --sign:#16295B;         /* 駅サインの紺 */
+  --sign-deep:#0E1C42;
+  --paper:#F6F5F1;
+  --line:#D9D7CF;
+  --ink:#1B1F2A;
+  --sub:#6B7080;
+  --go:#1F8A5B;           /* 出口サインの緑 */
+  --warn:#E2543B;         /* 選択・現在地アクセント */
+  --acc-blue:#2E6FD8;
+  --radius:14px;
+  --shadow:0 6px 24px rgba(14,28,66,.18);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Noto Sans SC","Noto Sans KR","Segoe UI",sans-serif;background:var(--paper);color:var(--ink)}
+#map{position:fixed;inset:0;z-index:1}
+.leaflet-control-attribution{font-size:9px;opacity:.75}
+
+/* ---- top bar ---- */
+#topbar{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:8px;padding:10px 12px calc(10px);
+  padding-top:max(10px, env(safe-area-inset-top));pointer-events:none}
+#brand{pointer-events:auto;display:flex;align-items:center;gap:8px;background:var(--sign);color:#fff;border-radius:10px;
+  padding:8px 12px;box-shadow:var(--shadow);font-weight:700;font-size:14px;letter-spacing:.02em;line-height:1.1}
+#brand svg{flex:none}
+#brand .en{display:block;font-size:9px;font-weight:500;opacity:.75;letter-spacing:.08em;text-transform:uppercase}
+#langs{pointer-events:auto;margin-left:auto;display:flex;background:#fff;border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
+#langs button{border:0;background:transparent;padding:9px 10px;font-size:12px;font-weight:700;color:var(--sub);cursor:pointer}
+#langs button.on{background:var(--sign);color:#fff}
+
+/* ---- filter chip ---- */
+#chips{position:fixed;z-index:20;left:12px;right:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#chips{top:calc(max(10px, env(safe-area-inset-top)) + 52px)}
+.chip{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer;box-shadow:0 2px 8px rgba(14,28,66,.08)}
+.chip.on{background:var(--acc-blue);border-color:var(--acc-blue);color:#fff}
+#timePill{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:7px 12px;font-size:12px;font-weight:800;color:var(--sign);cursor:pointer;box-shadow:0 2px 8px rgba(14,28,66,.08);font-variant-numeric:tabular-nums}
+#timePill.sim{background:var(--warn);border-color:var(--warn);color:#fff}
+#legend{display:flex;gap:10px;background:rgba(255,255,255,.92);border-radius:999px;padding:5px 12px;box-shadow:0 2px 8px rgba(14,28,66,.08);flex-wrap:wrap}
+#legend span{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:var(--sub)}
+#legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+#timePanel{display:none;position:fixed;z-index:25;left:12px;right:12px;top:calc(max(10px, env(safe-area-inset-top)) + 96px);
+  background:#fff;border-radius:14px;box-shadow:var(--shadow);padding:14px 16px}
+#timePanel .row1{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+#timePanel .big{font-size:24px;font-weight:800;color:var(--sign);font-variant-numeric:tabular-nums}
+#timePanel .cap{font-size:11px;color:var(--sub);font-weight:600}
+#timePanel input[type=range]{width:100%;accent-color:var(--warn)}
+#timePanel .nowbtn{border:0;background:var(--paper);border:1.5px solid var(--line);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;color:var(--sign)}
+
+/* ---- locate FAB ---- */
+#locate{position:fixed;right:12px;z-index:20;width:44px;height:44px;border-radius:12px;border:0;background:#fff;box-shadow:var(--shadow);
+  display:flex;align-items:center;justify-content:center;cursor:pointer}
+#locate svg{width:22px;height:22px;fill:var(--sign)}
+
+/* ---- bottom stack ---- */
+#stack{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;flex-direction:column;pointer-events:none}
+#sheet{pointer-events:auto;background:#fff;border-radius:18px 18px 0 0;box-shadow:0 -8px 30px rgba(14,28,66,.22);overflow:hidden}
+
+/* signature: wayfinding sign band */
+#signband{background:linear-gradient(180deg,var(--sign) 0%,var(--sign-deep) 100%);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px}
+#signband .picto{flex:none;width:40px;height:40px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center}
+#signband .lbl{min-width:0}
+#signband .lbl .t{font-size:12px;font-weight:600;opacity:.85;letter-spacing:.04em}
+#signband .lbl .n{font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.01em}
+#signband .dist{margin-left:auto;text-align:right;flex:none}
+#signband .dist .d{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1}
+#signband .dist .w{font-size:11px;opacity:.85;font-weight:600;margin-top:2px}
+#signband .arrow{flex:none;font-size:22px;font-weight:800;opacity:.9}
+
+#list{max-height:31vh;overflow-y:auto}
+.row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);cursor:pointer}
+.row:active{background:#F1F3F8}
+.row .num{flex:none;width:26px;height:26px;border-radius:50%;background:var(--paper);border:1.5px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--sign)}
+.row.sel .num{background:var(--warn);border-color:var(--warn);color:#fff}
+.row .info{min-width:0;flex:1}
+.row .name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .sub{font-size:11px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.row .meta{flex:none;text-align:right}
+.row .meta .d{font-size:16px;font-weight:800;color:var(--sign);font-variant-numeric:tabular-nums}
+.row .meta .w{font-size:10px;color:var(--sub);font-weight:600}
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:var(--acc-blue);background:#EAF1FC;border-radius:5px;padding:2px 5px;margin-left:6px;vertical-align:1px}
+
+/* detail view */
+#detail{display:none}
+#detail .body{padding:14px 16px 8px}
+#detail .dname{font-size:17px;font-weight:800;line-height:1.3}
+#detail .droma{font-size:12px;color:var(--sub);margin-top:2px}
+#detail .tags{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.tag{font-size:11px;font-weight:700;border-radius:6px;padding:4px 8px}
+.tag.free{background:#E7F4EC;color:var(--go)}
+.tag.wc{background:#EAF1FC;color:var(--acc-blue)}
+#detail .addr{font-size:12px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 11px;line-height:1.5}
+#detail .addr .cap{font-size:10px;color:var(--sub);font-weight:700;letter-spacing:.05em;display:block;margin-bottom:2px}
+#detail .fx{font-size:11px;color:var(--sub);margin-top:8px;line-height:1.5}
+#detail .hint{font-size:11px;color:var(--sub);margin-top:8px;display:flex;gap:5px;align-items:flex-start}
+.navrow{display:flex;gap:8px;padding:12px 16px 14px}
+.navbtn{flex:1;border:0;border-radius:12px;padding:14px 10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px}
+.navbtn.apple{background:var(--sign);color:#fff}
+.navbtn.google{background:#fff;color:var(--sign);border:2px solid var(--sign)}
+#backbtn{border:0;background:transparent;color:#fff;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;opacity:.9;padding:4px 0}
+
+/* ad slot */
+#ad{pointer-events:auto;background:#ECEAE3;border-top:1px solid var(--line);height:56px;display:flex;align-items:center;justify-content:center;gap:10px;
+  padding-bottom:env(safe-area-inset-bottom);position:relative}
+#ad .adtag{position:absolute;top:4px;left:6px;font-size:8px;font-weight:700;color:#9A968A;border:1px solid #C9C5B8;border-radius:3px;padding:1px 4px;letter-spacing:.08em}
+#ad .fake{display:flex;align-items:center;gap:10px;opacity:.65}
+#ad .fake .box{width:38px;height:38px;border-radius:8px;background:repeating-linear-gradient(45deg,#D5D2C6,#D5D2C6 6px,#C9C5B8 6px,#C9C5B8 12px)}
+#ad .fake .tx{font-size:11px;color:#7C7869;font-weight:600;line-height:1.35}
+
+/* demo location modal */
+#demo{position:fixed;inset:0;z-index:50;background:rgba(14,28,66,.45);display:flex;align-items:flex-end;justify-content:center}
+#demo .card{background:#fff;border-radius:18px 18px 0 0;width:100%;max-width:560px;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+#demo h2{font-size:15px;font-weight:800;margin-bottom:4px}
+#demo p{font-size:12px;color:var(--sub);margin-bottom:12px}
+#demo .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#demo .grid button{border:1.5px solid var(--line);background:var(--paper);border-radius:10px;padding:12px 8px;font-size:13px;font-weight:700;cursor:pointer;color:var(--ink)}
+#demo .gps{width:100%;margin-top:8px;border:0;background:var(--sign);color:#fff;border-radius:10px;padding:13px;font-size:13px;font-weight:800;cursor:pointer}
+
+/* toast */
+#toast{position:fixed;top:calc(max(10px, env(safe-area-inset-top)) + 96px);left:50%;transform:translateX(-50%);z-index:40;
+  background:var(--sign-deep);color:#fff;font-size:12px;font-weight:600;border-radius:999px;padding:8px 14px;box-shadow:var(--shadow);
+  opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1}
+
+/* map pins */
+.pin{width:30px;height:30px;border-radius:9px;background:var(--sign);border:2.5px solid #fff;box-shadow:0 2px 8px rgba(14,28,66,.4);
+  display:flex;align-items:center;justify-content:center;transition:transform .15s}
+.pin.acc{background:var(--acc-blue)}
+.pin.t1{background:#C77800}
+.pin.t2{background:#7A3E9D}
+.pin.t3{background:var(--go)}
+.pin.off{background:#A8ADB8;opacity:.75}
+.pin.sel{background:var(--warn);transform:scale(1.25);z-index:1000!important}
+.tag.open{background:#E7F4EC;color:var(--go)}
+.tag.closed{background:#EFEFEF;color:#8A8F9C}
+.tag.type1{background:#FBF0DC;color:#C77800}
+.tag.type2{background:#F2E8F8;color:#7A3E9D}
+#detail .verify{font-size:10px;color:#B08A3E;background:#FBF4E2;border-radius:6px;padding:5px 8px;margin-top:8px;line-height:1.5}
+.mepin{width:18px;height:18px;border-radius:50%;background:var(--warn);border:3px solid #fff;box-shadow:0 0 0 6px rgba(226,84,59,.25)}
+@media (prefers-reduced-motion:no-preference){.mepin{animation:pulse 2s infinite}}
+@keyframes pulse{0%{box-shadow:0 0 0 4px rgba(226,84,59,.3)}70%{box-shadow:0 0 0 14px rgba(226,84,59,0)}100%{box-shadow:0 0 0 4px rgba(226,84,59,0)}}
+.credit{position:fixed;left:0;right:0;bottom:0;z-index:2}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="topbar">
+  <div id="brand">
+    <svg width="22" height="26" viewBox="0 0 100 120"><path d="M50 4C25 4 8 22 8 45c0 15 8 26 18 33l24 38 24-38c10-7 18-18 18-33C92 22 75 4 50 4z" fill="#4CBF8B"/><circle cx="50" cy="44" r="30" fill="#fff"/><circle cx="38" cy="32" r="7.5" fill="#2E6FD8"/><rect x="31" y="41" width="14" height="24" rx="6" fill="#2E6FD8"/><circle cx="62" cy="32" r="7.5" fill="#E2543B"/><path d="M62 41 L51 64 L73 64 Z" fill="#E2543B"/></svg>
+    <div><span id="ttl">大阪トイレマップ</span><span class="en" id="ttl2">Osaka Toilet Map</span></div>
+  </div>
+  <div id="langs">
+    <button data-l="ja">日</button><button data-l="en">EN</button><button data-l="zh">中</button><button data-l="ko">한</button>
+  </div>
+</div>
+
+<div id="chips">
+  <button class="chip" id="accChip">♿ <span id="accLbl"></span></button>
+  <button id="timePill">🕐 --:--</button>
+  <div id="legend"></div>
+</div>
+
+<div id="timePanel">
+  <div class="row1"><div><div class="big" id="tpTime">--:--</div><div class="cap" id="tpCap"></div></div>
+  <button class="nowbtn" id="tpNow"></button></div>
+  <input type="range" id="tpRange" min="0" max="1439" step="15">
+</div>
+
+<button id="locate" title="My location"><svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm9 3h-1.1a8 8 0 00-6.9-6.9V3h-2v1.1A8 8 0 004.1 11H3v2h1.1a8 8 0 006.9 6.9V21h2v-1.1a8 8 0 006.9-6.9H21v-2zm-9 7a6 6 0 110-12 6 6 0 010 12z"/></svg></button>
+
+<div id="stack">
+  <div id="sheet">
+    <div id="signband">
+      <div class="picto"><svg width="24" height="24" viewBox="0 0 24 24" fill="#16295B"><circle cx="7.5" cy="4.4" r="2.1"/><path d="M5.2 7.2h4.6c.9 0 1.5.6 1.5 1.5v5h-1.6v8h-4.4v-8H3.7v-5c0-.9.6-1.5 1.5-1.5z"/><circle cx="17" cy="4.4" r="2.1"/><path d="M17 7c1 0 1.7.5 2 1.4l1.9 5.6h-1.9l1.2 3.7h-2.4v4h-3.6v-4h-2.4l1.2-3.7h-1.9l1.9-5.6c.3-.9 1-1.4 2-1.4z"/></svg></div>
+      <div class="lbl"><div class="t" id="bandT"></div><div class="n" id="bandN">—</div></div>
+      <div class="dist"><div class="d" id="bandD">—</div><div class="w" id="bandW"></div></div>
+      <div class="arrow">➜</div>
+    </div>
+    <div id="list"></div>
+    <div id="detail">
+      <div class="body">
+        <div class="dname" id="dName"></div>
+        <div class="droma" id="dRoma"></div>
+        <div class="tags" id="dTags"></div>
+        <div class="addr"><span class="cap" id="dAddrCap"></span><span id="dAddr"></span></div>
+        <div class="fx" id="dFx"></div>
+        <div class="verify" id="dVerify" style="display:none"></div>
+        <div class="hint">🙏 <span id="dHint"></span></div>
+      </div>
+      <div class="navrow">
+        <button class="navbtn apple" id="navApple"> <span id="navLbl1"></span></button>
+        <button class="navbtn google" id="navGoogle">G <span id="navLbl2"></span></button>
+      </div>
+    </div>
+  </div>
+  <div id="ad">
+    <span class="adtag" id="adTag">AD</span>
+    <div class="fake"><div class="box"></div><div class="tx" id="adTx">Ad space 320×50<br>AdSense / affiliate banner</div></div>
+  </div>
+</div>
+
+<div id="demo">
+  <div class="card">
+    <h2 id="demoT"></h2>
+    <p id="demoP"></p>
+    <div class="grid" id="demoGrid"></div>
+    <button class="gps" id="demoGps"></button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const TOILETS = [["太左衛門橋公衆トイレ", "Tazaemonbashi Koshu Toire", 34.668897, 135.503319, 1, "大阪市中央区道頓堀1-5", "便器数　　男性用　小：３　　男女兼用車いす対応：１"], ["城北公園　公衆トイレ５", "Shirokita Koen Koshu Toire", 34.730211, 135.539913, 0, "大阪市旭区生江3丁目 29-60", ""], ["江野公園　公衆トイレ", "Eno Koen Koshu Toire", 34.723584, 135.542347, 0, "大阪市旭区中宮2丁目 18-22", ""], ["旭公園　公衆トイレ１", "Asahi Koen Koshu Toire", 34.719332, 135.540486, 1, "大阪市旭区高殿5丁目 7-23", ""], ["旭公園　公衆トイレ２", "Asahi Koen Koshu Toire", 34.717595, 135.540798, 1, "大阪市旭区高殿5丁目 7-63", ""], ["旭公園　公衆トイレ３", "Asahi Koen Koshu Toire", 34.717954, 135.539873, 0, "大阪市旭区高殿5丁目 8-15", ""], ["太子橋中公園　公衆トイレ", "Taishibashihigashi Koen Koshu Toire", 34.736067, 135.555375, 1, "大阪市旭区太子橋2丁目 7-14", ""], ["高殿７公園　公衆トイレ", "Takadono Koen Koshu Toire", 34.717953, 135.549135, 1, "大阪市旭区高殿7丁目 15-15", ""], ["蒲生公園　公衆トイレ", "Gamo Koen Koshu Toire", 34.704461, 135.544286, 1, "大阪市城東区中央3丁目 5-17", ""], ["鯰江公園　公衆トイレ", "Namazue Koen Koshu Toire", 34.70411, 135.552486, 1, "大阪市城東区今福西6丁目 5-26", ""], ["西関目公園　公衆トイレ", "Nishisekime Koen Koshu Toire", 34.708444, 135.548177, 1, "大阪市城東区関目1丁目 7-23", ""], ["成育公園　公衆トイレ", "Seiiku Koen Koshu Toire", 34.709272, 135.543787, 0, "大阪市城東区成育3丁目 18-25", ""], ["左専道公園　公衆トイレ", "Sasendo Koen Koshu Toire", 34.686244, 135.557121, 1, "大阪市城東区永田2丁目 12-25", ""], ["東中浜公園　公衆トイレ", "Higashinakahama Koen Koshu Toire", 34.684678, 135.548672, 1, "大阪市城東区東中浜5丁目 3-31", ""], ["東今福公園　公衆トイレ", "Higashiimafuku Koen Koshu Toire", 34.703005, 135.558333, 1, "大阪市城東区今福東2丁目 11-6", ""], ["西放出公園　公衆トイレ", "Nishihanaten Koen Koshu Toire", 34.692805, 135.557321, 1, "大阪市城東区放出西2丁目 15-5", ""], ["鴫野公園　公衆トイレ", "Shigino Koen Koshu Toire", 34.691571, 135.540929, 1, "大阪市城東区鴫野西4丁目 11-52", ""], ["鴫野北公園　公衆トイレ", "Shiginokita Koen Koshu Toire", 34.695402, 135.544812, 1, "大阪市城東区鴫野東1丁目 5-35", ""], ["中之島公園　公衆トイレ１", "Nakanoshima Koen Koshu Toire", 34.692719, 135.507482, 1, "大阪市北区中之島1丁目 1", ""], ["中之島公園　公衆トイレ２", "Nakanoshima Koen Koshu Toire", 34.6917, 135.51036, 1, "大阪市北区中之島1丁目 1", ""], ["毛馬桜之宮公園　公衆トイレ（川崎橋横）", "Kemasakuranomiya Koen Koshu Toire", 34.693638, 135.521108, 1, "大阪市北区天満1丁目 1-139", ""], ["毛馬桜之宮公園　公衆トイレ（天満橋北）", "Kemasakuranomiya Koen Koshu Toire", 34.692022, 135.517681, 0, "大阪市北区天満1丁目 5-2", "便器数　　男性用　和：１　小：２　　女性用　和：２"], ["都島公園　公衆トイレ", "Miyakojima Koen Koshu Toire", 34.705904, 135.530503, 1, "大阪市都島区都島中通2丁目 22-8", "便器数　　男性用　小：２　　男女兼用　和：１　　車椅子対応：１"], ["毛馬桜之宮公園　公衆トイレ（市公館横（1））", "Kemasakuranomiya Koen Koshu Toire", 34.695579, 135.523783, 1, "大阪市都島区網島町10", ""], ["毛馬桜之宮公園　公衆トイレ（艇庫横北）", "Kemasakuranomiya Koen Koshu Toire", 34.700711, 135.523055, 1, "大阪市都島区中野町1丁目 10-8", ""], ["毛馬桜之宮公園　公衆トイレ（ＪＲ北側）", "Kemasakuranomiya Koen Koshu Toire", 34.705904, 135.518927, 1, "大阪市都島区中野町5丁目 12-4", ""], ["毛馬桜之宮公園　公衆トイレ（友渕南）", "Kemasakuranomiya Koen Koshu Toire", 34.715519, 135.522486, 1, "大阪市都島区友渕町1丁目 1-6", ""], ["八幡屋公園　公衆トイレ１", "Yahataya Koen Koshu Toire", 34.661742, 135.447043, 1, "大阪市港区田中3丁目 1-116", ""], ["八幡屋公園　公衆トイレ２", "Yahataya Koen Koshu Toire", 34.659675, 135.447351, 1, "大阪市港区田中3丁目 1-30", ""], ["八幡屋公園　公衆トイレ３", "Yahataya Koen Koshu Toire", 34.65968, 135.445898, 1, "大阪市港区田中3丁目 1-43", ""], ["城北公園　公衆トイレ１", "Shirokita Koen Koshu Toire", 34.729065, 135.540161, 1, "大阪市旭区生江3丁目 29-73", ""], ["城北公園　公衆トイレ２", "Shirokita Koen Koshu Toire", 34.730072, 135.538327, 1, "大阪市旭区生江3丁目 29-32", ""], ["城北公園　公衆トイレ３", "Shirokita Koen Koshu Toire", 34.728408, 135.537981, 1, "大阪市旭区生江3丁目 29-101", ""], ["城北公園　公衆トイレ４", "Shirokita Koen Koshu Toire", 34.729398, 135.535948, 1, "大阪市旭区生江3丁目 29-125", ""], ["靭公園　公衆トイレ１", "Utsubo Koen Koshu Toire", 34.683529, 135.48942, 1, "大阪市西区靱本町2丁目 1-53", ""], ["靭公園　公衆トイレ２", "Utsubo Koen Koshu Toire", 34.685279, 135.49312, 1, "大阪市西区靱本町1丁目 9-58", ""], ["靭公園　公衆トイレ３", "Utsubo Koen Koshu Toire", 34.68633, 135.495044, 1, "大阪市西区靱本町1丁目 9-83", ""], ["靭公園　公衆トイレ４", "Utsubo Koen Koshu Toire", 34.686052, 135.496137, 1, "大阪市西区靱本町1丁目 8-11", ""], ["天王寺公園　公衆トイレ２", "Tennoji Koen Koshu Toire", 34.648017, 135.511877, 1, "大阪市天王寺区茶臼山町", ""], ["天王寺公園　公衆トイレ３", "Tennoji Koen Koshu Toire", 34.649281, 135.511065, 1, "大阪市天王寺区茶臼山町", ""], ["天王寺公園　公衆トイレ４", "Tennoji Koen Koshu Toire", 34.649631, 135.509714, 1, "大阪市天王寺区茶臼山町", ""], ["天王寺公園　公衆トイレ５", "Tennoji Koen Koshu Toire", 34.6519, 135.512203, 1, "大阪市天王寺区茶臼山町", ""], ["長居公園　公衆トイレ（相撲場横）", "Nagai Koen Koshu Toire Sumojomae", 34.612425, 135.516929, 1, "大阪市東住吉区長居公園1", ""], ["長居公園　公衆トイレ（南西入口）", "Nagai Koen Koshu Toire", 34.610517, 135.514877, 1, "大阪市東住吉区長居公園1", ""], ["長居公園　公衆トイレ（南西角）", "Nagai Koen Koshu Toire", 34.609648, 135.516521, 1, "大阪市東住吉区長居公園1", ""], ["長居公園　公衆トイレ（矢田口）", "Nagai Koen Koshu Toire", 34.609804, 135.526512, 1, "大阪市東住吉区長居公園1", ""], ["長居公園　公衆トイレ（植物園前）", "Nagai Koen Koshu Toire", 34.611423, 135.520019, 1, "大阪市東住吉区長居公園1", ""], ["長居公園　公衆トイレ（田辺口）", "Nagai Koen Koshu Toire", 34.614789, 135.526324, 1, "大阪市東住吉区長居公園1", ""], ["長居公園　公衆トイレ（プール横）", "Nagai Koen Koshu Toire", 34.61331, 135.519764, 1, "大阪市東住吉区長居公園1", ""], ["大阪城公園　公衆トイレ２", "Oosakajo Koen Koshu Toire", 34.686767, 135.525395, 1, "大阪市中央区大阪城0 1-1", ""], ["大阪城公園　公衆トイレ３", "Oosakajo Koen Koshu Toire", 34.685729, 135.525101, 1, "大阪市中央区大阪城0 1-1", ""], ["大阪城公園　公衆トイレ４", "Oosakajo Koen Koshu Toire", 34.686767, 135.528308, 1, "大阪市中央区大阪城0 1-1", ""], ["大阪城公園　公衆トイレ５", "Oosakajo Koen Koshu Toire", 34.689723, 135.52619, 1, "大阪市中央区城見1丁目 1-3", ""], ["大阪城公園　公衆トイレ６", "Oosakajo Koen Koshu Toire", 34.688403, 135.522876, 1, "大阪市中央区大阪城0 3-29", ""], ["大阪城公園　公衆トイレ７", "Oosakajo Koen Koshu Toire", 34.684475, 135.525524, 1, "大阪市中央区大阪城0 2-1", ""], ["大阪城公園　公衆トイレ８", "Oosakajo Koen Koshu Toire", 34.685626, 135.521582, 1, "大阪市中央区大阪城0 2-24", ""], ["大阪城公園　公衆トイレ９", "Oosakajo Koen Koshu Toire", 34.683548, 135.522017, 1, "大阪市中央区大阪城0 2-21", ""], ["大阪城公園　公衆トイレ１１", "Oosakajo Koen Koshu Toire", 34.682372, 135.529649, 1, "大阪市中央区大阪城0 3-13", ""], ["大阪城公園　公衆トイレ１２", "Oosakajo Koen Koshu Toire", 34.684262, 135.53043, 1, "大阪市中央区大阪城0 3-11", ""], ["大阪城公園　公衆トイレ１３", "Oosakajo Koen Koshu Toire", 34.683627, 135.532091, 1, "大阪市中央区大阪城0 3-7", ""], ["大阪城公園　公衆トイレ１４", "Oosakajo Koen Koshu Toire", 34.682317, 135.532978, 1, "大阪市中央区大阪城0 3-10", ""], ["大阪城公園　公衆トイレ１５", "Oosakajo Koen Koshu Toire", 34.686341, 135.533228, 1, "大阪市中央区大阪城0 3-4", ""], ["大阪城公園　公衆トイレ１６", "Oosakajo Koen Koshu Toire", 34.689065, 135.53234, 1, "大阪市中央区城見1丁目 4-82", ""], ["大阪城公園　公衆トイレ１８", "Oosakajo Koen Koshu Toire", 34.689901, 135.528522, 1, "大阪市中央区城見1丁目 1-33", ""], ["花博記念公園鶴見緑地　公衆トイレ２", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.716349, 135.577946, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ３", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.715269, 135.578469, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ４", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.713925, 135.577576, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ５", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.711993, 135.576057, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ６", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.711571, 135.57782, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ７", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.710765, 135.576241, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ８", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.709264, 135.578691, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ９", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.710934, 135.572992, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ１０", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.712926, 135.572286, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ１１", "Hanahakukinen Koen Tsurumi Ryokuchi Chi Koshu Toire", 34.710696, 135.569268, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ１２", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.712669, 135.569619, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ１３", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.716324, 135.569041, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ１４", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.71601, 135.572877, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ１７", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.711532, 135.563655, 1, "大阪市鶴見区緑地公園", ""], ["扇町公園　公衆トイレ１", "Ogimachi Koen Koshu Toire", 34.704737, 135.508772, 1, "大阪市北区扇町2丁目 2-9", ""], ["鶴満寺公園　公衆トイレ", "Kakumanji Koen Koshu Toire", 34.711212, 135.516161, 1, "大阪市北区長柄東1丁目 3-15", ""], ["天六", "Tenroku", 34.710566, 135.511442, 1, "大阪市北区天神橋6丁目 4-20", "便器数　　男性用　洋：１　和：１　小：２　　女性用　洋：１　和：１　　男女兼用車いす対応：１"], ["大正橋公衆トイレ", "Taishobashi Koshu Toire", 34.666784, 135.479869, 0, "大阪市大正区三軒家東1-1", "便器数　　男性用　小：２　　男女兼用　和：１"], ["鶴町北公園　公衆トイレ", "Tsurumachikita Koen Koshu Toire", 34.643832, 135.45428, 0, "大阪市大正区鶴町4丁目 4-11", "便器数　　男性用　小：１　　男女兼用　和：１"], ["生玉町公衆トイレ", "Ikutamacho Koshu Toire", 34.665902, 135.512994, 0, "大阪市天王寺区生玉町13", "便器数　　男性用　小：２　　男女兼用　洋：１"], ["五条公園　公衆トイレ", "Gojo Koen Koshu Toire", 34.6579, 135.524093, 0, "大阪市天王寺区烏ケ辻2丁目 5-37", "便器数　　男性用　小：２　　男女兼用　和：１"], ["御霊神社横公衆トイレ", "Goryojinjayoko Koshu Toire", 34.687604, 135.49891, 0, "大阪市中央区淡路町4", "便器数　　男性用　小：２　　男女兼用　和：１"], ["新世界公衆トイレ", "Shinsekai Koshu Toire", 34.652545, 135.505972, 0, "大阪市浪速区恵美須東1-18", "便器数　　男性用　小：２　　男女兼用　和：２"], ["相合橋公衆トイレ", "Aiaubashi Koshu Toire", 34.669213, 135.504368, 1, "大阪市中央区宗右衛門町", "便器数　　男性用　小：１　　女性用　洋：１　　男女兼用車いす対応：１"], ["野里公園　公衆トイレ", "Nozato Koen Koshu Toire", 34.708765, 135.463342, 1, "大阪市西淀川区野里1丁目 9-17", "便器数　　男性用　小：２　　男女兼用　和：１　　車椅子対応：１"], ["大野川遊歩道公衆トイレ", "Oonogawayuhodo Koshu Toire", 34.715504, 135.460077, 1, "大阪市西淀川区御幣島3-1", "便器数　　男性用　和：１　小：２　　女性用　和：２　　男女兼用　車いす対応：１"], ["南中本公園　公衆トイレ", "Minaminakamoto Koen Koshu Toire", 34.674273, 135.542132, 1, "大阪市東成区大今里西1丁目 10-1", "便器数　　男性用　小：２　　男女兼用　和：１　　車椅子対応：１"], ["大今里公園　公衆トイレ", "Ooimazato Koen Koshu Toire", 34.668641, 135.548689, 0, "大阪市東成区大今里4丁目 16-23", "便器数　　男性用　和：１　小：２　　女性用　和：１"], ["千林町公衆トイレ", "Senbayashicho Koshu Toire", 34.724258, 135.554815, 1, "大阪市旭区千林1-11", "便器数　　男性用　車いす対応：１　女性用　洋：１　車いす対応：１"], ["山坂公園　公衆トイレ", "Yamasaka Koen Koshu Toire", 34.623015, 135.521892, 0, "大阪市東住吉区山坂2丁目 19-33", "便器数　　男性用　小：２　　男女兼用　和：１"], ["平野公園　公衆トイレ１", "Hirano Koen Koshu Toire", 34.623322, 135.55978, 1, "大阪市平野区平野東2丁目 11-15", "便器数　　男性用　小：２　　男女兼用　和：１　　車椅子対応：１"], ["浦江公園　公衆トイレ", "Urae Koen Koshu Toire", 34.701422, 135.483026, 1, "大阪市北区大淀南3丁目 3-43", ""], ["豊崎西公園　公衆トイレ", "Toyosakinishi Koen Koshu Toire", 34.711368, 135.49816, 1, "大阪市北区豊崎5丁目 5-13", ""], ["南天満公園　公衆トイレ１", "Minamitenma Koen Koshu Toire", 34.692322, 135.51258, 1, "大阪市北区天神橋1丁目 2-4", ""], ["本庄公園　公衆トイレ", "Honjo Koen Koshu Toire", 34.715147, 135.504045, 1, "大阪市北区本庄西3丁目 11-8", ""], ["滝川公園　公衆トイレ", "Takigawa Koen Koshu Toire", 34.693933, 135.514428, 1, "大阪市北区天満4丁目 7-9", ""], ["与力町公園　公衆トイレ", "Yorikicho Koen Koshu Toire", 34.701414, 135.514772, 1, "大阪市北区与力町5", ""], ["長柄東公園　公衆トイレ", "Nagarahigashi Koen Koshu Toire", 34.712162, 135.51962, 1, "大阪市北区長柄東1丁目 6-37", ""], ["内代公園　公衆トイレ", "Uchindai Koen Koshu Toire", 34.713387, 135.536573, 1, "大阪市都島区内代町3丁目 3-19", ""], ["友渕中央公園　公衆トイレ", "Tomobuchichuo Koen Koshu Toire", 34.719238, 135.524679, 0, "大阪市都島区友渕町1丁目 3-54", ""], ["都島中央公園　公衆トイレ", "Miyakojimachuo Koen Koshu Toire", 34.706907, 135.52261, 1, "大阪市都島区中野町5丁目 15-50", ""], ["毛馬中央公園　公衆トイレ", "Kemachuo Koen Koshu Toire", 34.72271, 135.522045, 1, "大阪市都島区毛馬町4丁目 1-27", ""], ["福島公園　公衆トイレ", "Fukushima Koen Koshu Toire", 34.695875, 135.485006, 1, "大阪市福島区福島5丁目 16-9", ""], ["下福島公園　公衆トイレ", "Shimofukushima Koen Koshu Toire", 34.690476, 135.483123, 1, "大阪市福島区福島4丁目 1-6", ""], ["江成公園　公衆トイレ", "Enari Koen Koshu Toire", 34.691825, 135.473305, 1, "大阪市福島区吉野3丁目 17-31", ""], ["吉野町公園　公衆トイレ", "Yoshinocho Koen Koshu Toire", 34.689364, 135.47079, 1, "大阪市福島区吉野4丁目 12-7", ""], ["上福島北公園　公衆トイレ", "Kamifukushimakita Koen Koshu Toire", 34.700647, 135.486205, 1, "大阪市福島区福島7丁目 23-3", ""], ["鷺洲中公園　公衆トイレ", "Sagisunaka Koen Koshu Toire", 34.6968, 135.481078, 1, "大阪市福島区鷺洲2丁目 4-12", ""], ["新家公園　公衆トイレ", "Shinke Koen Koshu Toire", 34.68747, 135.468565, 1, "大阪市福島区吉野5丁目 9-29", ""], ["海老江公園　公衆トイレ", "Ebie Koen Koshu Toire", 34.695308, 135.470211, 1, "大阪市福島区海老江7丁目 15-26", ""], ["西九条公園　公衆トイレ", "Nishikujo Koen Koshu Toire", 34.684008, 135.465242, 1, "大阪市此花区西九条5丁目 4-10", ""], ["此花公園　公衆トイレ", "Konohana Koen Koshu Toire", 34.682349, 135.450756, 1, "大阪市此花区春日出北1丁目 5-4", ""], ["梅香公園　公衆トイレ", "Baika Koen Koshu Toire", 34.681182, 135.45569, 1, "大阪市此花区梅香3丁目 3-4", ""], ["春日出公園　公衆トイレ", "Kasugade Koen Koshu Toire", 34.679382, 135.457674, 1, "大阪市此花区春日出南1丁目 2-29", ""], ["西九条西公園　公衆トイレ", "Nishikujonishi Koen Koshu Toire", 34.681934, 135.463885, 1, "大阪市此花区西九条4丁目 4-18", ""], ["梅香東公園　公衆トイレ", "Baikahigashi Koen Koshu Toire", 34.682259, 135.459735, 1, "大阪市此花区梅香1丁目 3-5", ""], ["高見公園　公衆トイレ", "Takami Koen Koshu Toire", 34.691518, 135.458453, 1, "大阪市此花区高見1丁目 5-18", ""], ["伝法東公園　公衆トイレ", "Denpohigashi Koen Koshu Toire", 34.687778, 135.455095, 1, "大阪市此花区伝法2丁目 11-7", ""], ["伝法公園　公衆トイレ", "Denpo Koen Koshu Toire", 34.688712, 135.451302, 1, "大阪市此花区伝法3丁目 14-6", ""], ["朝日橋公園　公衆トイレ", "Asahibashi Koen Koshu Toire", 34.681508, 135.462251, 1, "大阪市此花区西九条6丁目 1-92", ""], ["千鳥橋みどり公園　公衆トイレ", "Chidoribashimidori Koen Koshu Toire", 34.688814, 135.460499, 1, "大阪市此花区伝法1丁目 2-30", ""], ["高見新家公園　公衆トイレ", "Takamishinke Koen Koshu Toire", 34.689908, 135.462932, 1, "大阪市此花区高見1丁目 2-117", ""], ["瓦屋町公園　公衆トイレ１", "Kawarayamachi Koen Koshu Toire", 34.670393, 135.512702, 0, "大阪市中央区瓦屋町2丁目 9-24", ""], ["松島公園　公衆トイレ１", "Matsushima Koen Koshu Toire", 34.676757, 135.481434, 1, "大阪市西区千代崎1丁目 1-14", ""], ["松島公園　公衆トイレ２", "Matsushima Koen Koshu Toire", 34.676953, 135.480294, 1, "大阪市西区千代崎1丁目 3-49", ""], ["九条北公園　公衆トイレ", "Kujokita Koen Koshu Toire", 34.67557, 135.467534, 1, "大阪市西区九条南4丁目 19-10", ""], ["九条東公園　公衆トイレ", "Kujohigashi Koen Koshu Toire", 34.675528, 135.472042, 0, "大阪市西区九条2丁目 19-4", ""], ["日吉公園　公衆トイレ", "Hiyoshi Koen Koshu Toire", 34.670844, 135.484709, 1, "大阪市西区南堀江4丁目 9-14", ""], ["島津公園　公衆トイレ", "Shimazu Koen Koshu Toire", 34.67962, 135.48561, 0, "大阪市西区立売堀5丁目 4-33", ""], ["築港南公園　公衆トイレ", "Chikkominami Koen Koshu Toire", 34.653482, 135.43728, 1, "大阪市港区築港1丁目 2-53", ""], ["東田中公園　公衆トイレ", "Higashitanaka Koen Koshu Toire", 34.665196, 135.451526, 1, "大阪市港区田中1丁目 1-3", ""], ["天保山公園　公衆トイレ", "Tenpozan Koen Koshu Toire", 34.657145, 135.43304, 1, "大阪市港区築港3丁目 2-6", ""], ["三先公園　公衆トイレ", "Misaki Koen Koshu Toire", 34.659645, 135.452209, 1, "大阪市港区三先2丁目 3-17", ""], ["市岡元町公園　公衆トイレ", "Ichiokamotomachi Koen Koshu Toire", 34.66741, 135.464556, 1, "大阪市港区市岡元町3丁目 12-36", ""], ["磯路中央公園　公衆トイレ１", "Isojichuo Koen Koshu Toire", 34.666353, 135.459864, 1, "大阪市港区磯路2丁目 17-63", ""], ["波除公園　公衆トイレ１", "Namiyoke Koen Koshu Toire", 34.674183, 135.460142, 1, "大阪市港区波除5丁目 12-32", ""], ["池島公園　公衆トイレ", "Ikejima Koen Koshu Toire", 34.656765, 135.451956, 1, "大阪市港区池島2丁目 4-19", ""], ["夕凪公園　公衆トイレ", "Yunagi Koen Koshu Toire", 34.662721, 135.452073, 1, "大阪市港区夕凪2丁目 6-6", ""], ["入舟公園　公衆トイレ", "Irifune Koen Koshu Toire", 34.65753, 135.447868, 0, "大阪市港区八幡屋1丁目 4-1", ""], ["市岡公園　公衆トイレ", "Ichioka Koen Koshu Toire", 34.659815, 135.46213, 0, "大阪市港区市岡4丁目 6-8", ""], ["泉尾公園　公衆トイレ１", "Izuo Koen Koshu Toire", 34.655944, 135.468394, 1, "大阪市大正区泉尾4丁目 21-33", ""], ["泉尾公園　公衆トイレ２", "Izuo Koen Koshu Toire", 34.657792, 135.468423, 1, "大阪市大正区泉尾4丁目 21-63", ""], ["鶴町中央公園　公衆トイレ", "Tsurumachichuo Koen Koshu Toire", 34.638919, 135.455869, 1, "大阪市大正区鶴町2丁目 7-36", ""], ["三軒家公園　公衆トイレ", "Sangenya Koen Koshu Toire", 34.65968, 135.478523, 0, "大阪市大正区三軒家東2丁目 12-43", ""], ["鶴町南公園　公衆トイレ", "Tsurumachiminami Koen Koshu Toire", 34.636174, 135.455506, 1, "大阪市大正区鶴町1丁目 19-43", ""], ["南恩加島公園　公衆トイレ", "Minamiokajima Koen Koshu Toire", 34.634821, 135.472161, 1, "大阪市大正区南恩加島1丁目 13-39", ""], ["小林公園　公衆トイレ", "Kobayashi Koen Koshu Toire", 34.643547, 135.474502, 1, "大阪市大正区小林東2丁目 6-49", ""], ["千島公園　公衆トイレ１", "Chishima Koen Koshu Toire", 34.64934, 135.472045, 1, "大阪市大正区千島2丁目 7-93", ""], ["千島公園　公衆トイレ２", "Chishima Koen Koshu Toire", 34.649889, 135.473971, 1, "大阪市大正区千島2丁目 7-114", ""], ["千島公園　公衆トイレ３", "Chishima Koen Koshu Toire", 34.64791, 135.473765, 1, "大阪市大正区千島2丁目 7-40", ""], ["千島公園　公衆トイレ４", "Chishima Koen Koshu Toire", 34.648242, 135.476307, 1, "大阪市大正区千島2丁目 7-7", ""], ["平尾公園　公衆トイレ", "Hirao Koen Koshu Toire", 34.64077, 135.472968, 1, "大阪市大正区平尾2丁目 22-25", ""], ["北村南公園　公衆トイレ", "Kitamuraminami Koen Koshu Toire", 34.649046, 135.467297, 1, "大阪市大正区北村3丁目 2-49", ""], ["萩之茶屋中公園公衆トイレ", "Haginochayanaka Koen Koshu Toire", 34.645881, 135.500854, 0, "大阪市西成区萩之茶屋2-4", "便器数　　男性用　小：２　　男女兼用　和：１"], ["萩之茶屋南公園公衆トイレ", "Haginochayaminami Koen Koshu Toire", 34.644877, 135.501289, 0, "大阪市西成区萩之茶屋3-7", "便器数　　男性用　小：５　　男女兼用　和：３"], ["萩之茶屋公衆トイレ", "Haginochaya Koshu Toire", 34.645239, 135.49906, 0, "大阪市西成区萩之茶屋3-5", "便器数　　男性用　小：５　　男女兼用　和：３"], ["南天満公園　公衆トイレ２", "Minamitenma Koen Koshu Toire", 34.692058, 135.514383, 0, "大阪市北区天満4丁目 1-1", ""], ["中津公園　公衆トイレ", "Nakatsu Koen Koshu Toire", 34.71475, 135.498369, 0, "大阪市北区中津2丁目 8-92", ""], ["中之島西公園　公衆トイレ", "Nakanoshimanishi Koen Koshu Toire", 34.686406, 135.483685, 0, "大阪市北区中之島6丁目 3-5", ""], ["磯路中央公園　公衆トイレ２", "Isojichuo Koen Koshu Toire", 34.665055, 135.458052, 0, "大阪市港区磯路2丁目 17-28", ""], ["波除公園　公衆トイレ２", "Namiyoke Koen Koshu Toire", 34.674373, 135.46087, 0, "大阪市港区波除5丁目 5-26", ""], ["真田山公園　公衆トイレ１", "Sanadayama Koen Koshu Toire", 34.670584, 135.528175, 1, "大阪市天王寺区餌差町６", ""], ["真田山公園　公衆トイレ２", "Sanadayama Koen Koshu Toire", 34.669713, 135.527375, 0, "大阪市天王寺区真田山町５", ""], ["宰相山公園　公衆トイレ", "Saishoyama Koen Koshu Toire", 34.6727, 135.529499, 0, "大阪市天王寺区玉造本町14", ""], ["芦原公園　公衆トイレ１", "Ashihara Koen Koshu Toire", 34.662451, 135.483103, 0, "大阪市浪速区久保吉2丁目 1-55", ""], ["芦原公園　公衆トイレ２", "Ashihara Koen Koshu Toire", 34.661535, 135.483838, 0, "大阪市浪速区久保吉2丁目 1-30", ""], ["浪速公園　公衆トイレ", "Naniwa Koen Koshu Toire", 34.661907, 135.493137, 1, "大阪市浪速区塩草1丁目 1-14", ""], ["恵美公園　公衆トイレ", "Emi Koen Koshu Toire", 34.653752, 135.502066, 0, "大阪市浪速区恵美須西2丁目 13-43", ""], ["塩草公園　公衆トイレ", "Shiokusa Koen Koshu Toire", 34.659025, 135.492348, 0, "大阪市浪速区塩草2丁目 8-13", ""], ["佃公園　公衆トイレ", "Tsukuda Koen Koshu Toire", 34.711125, 135.434504, 1, "大阪市西淀川区佃5丁目 7-14", ""], ["北之町公園　公衆トイレ", "Kitanocho Koen Koshu Toire", 34.713522, 135.461074, 0, "大阪市西淀川区歌島3丁目 7-4", ""], ["姫島公園　公衆トイレ", "Himejima Koen Koshu Toire", 34.704546, 135.452381, 1, "大阪市西淀川区姫島4丁目 14-21", ""], ["中島公園　公衆トイレ１", "Nakajima Koen Koshu Toire", 34.70028, 135.425166, 1, "大阪市西淀川区中島1丁目 22-83", ""], ["中島公園　公衆トイレ２", "Nakajima Koen Koshu Toire", 34.700048, 135.427262, 0, "大阪市西淀川区中島1丁目 22-103", ""], ["大和田北公園　公衆トイレ", "Oowadakita Koen Koshu Toire", 34.708286, 135.444185, 0, "大阪市西淀川区大和田5丁目 20-37", ""], ["竹島西公園　公衆トイレ", "Takeshimanishi Koen Koshu Toire", 34.727331, 135.449039, 1, "大阪市西淀川区竹島5丁目 5-26", ""], ["西姫島公園　公衆トイレ", "Nishihimejima Koen Koshu Toire", 34.701348, 135.446579, 0, "大阪市西淀川区姫島6丁目 4-8", ""], ["福町東公園　公衆トイレ", "Fukumachihigashi Koen Koshu Toire", 34.698017, 135.445342, 1, "大阪市西淀川区福町1丁目 11-10", ""], ["西淀公園　公衆トイレ", "Nishiyodo Koen Koshu Toire", 34.706103, 135.451241, 1, "大阪市西淀川区大和田1丁目 1-48", ""], ["福町西公園　公衆トイレ", "Fukumachinishi Koen Koshu Toire", 34.697018, 135.443451, 1, "大阪市西淀川区福町2丁目 9-28", ""], ["新淀川公園　公衆トイレ", "Shinyodogawa Koen Koshu Toire", 34.694321, 135.438211, 1, "大阪市西淀川区百島1丁目 3-39", ""], ["大和田中央公園　公衆トイレ", "Oowadachuo Koen Koshu Toire", 34.705688, 135.443292, 1, "大阪市西淀川区大和田4丁目 4-21", ""], ["御幣島東公園　公衆トイレ", "Mitejimahigashi Koen Koshu Toire", 34.71771, 135.457445, 1, "大阪市西淀川区御幣島3丁目 7-24", ""], ["矢倉緑地公園　公衆トイレ", "Yagura Ryokuchi Koen Koshu Toire", 34.687778, 135.418377, 1, "大阪市西淀川区西島2-1", ""], ["佃ふれあい公園　公衆トイレ", "Tsukudafureai Koen Koshu Toire", 34.713901, 135.448746, 1, "大阪市西淀川区佃2丁目 1-42", ""], ["十三公園　公衆トイレ１", "Juso Koen Koshu Toire", 34.717056, 135.478212, 1, "大阪市淀川区十三元今里1丁目 1-6", ""], ["十三公園　公衆トイレ２", "Juso Koen Koshu Toire", 34.717265, 135.47688, 0, "大阪市淀川区十三元今里1丁目 1-41", ""], ["塚本公園　公衆トイレ", "Tsukamoto Koen Koshu Toire", 34.715784, 135.468185, 1, "大阪市淀川区塚本4丁目 15-16", ""], ["三国本町公園　公衆トイレ", "Mikunihonmachi Koen Koshu Toire", 34.731049, 135.487017, 1, "大阪市淀川区三国本町1丁目 12-6", ""], ["十八条東公園　公衆トイレ", "Juhachijohigashi Koen Koshu Toire", 34.746956, 135.496355, 1, "大阪市淀川区十八条1丁目 8-9", ""], ["十八条中央公園　公衆トイレ", "Juhachijochuo Koen Koshu Toire", 34.748149, 135.489968, 1, "大阪市淀川区十八条2丁目 16-4", ""], ["北中島公園　公衆トイレ", "Kitanakajima Koen Koshu Toire", 34.737691, 135.495216, 1, "大阪市淀川区宮原5丁目 7-3", ""], ["加島中央公園　公衆トイレ", "Kashimachuo Koen Koshu Toire", 34.728334, 135.459517, 1, "大阪市淀川区加島1丁目 58-24", ""], ["田川公園　公衆トイレ", "Tagawa Koen Koshu Toire", 34.720102, 135.4637, 0, "大阪市淀川区田川3丁目 11-41", ""], ["野中南公園　公衆トイレ", "Nonakaminami Koen Koshu Toire", 34.726381, 135.482691, 1, "大阪市淀川区野中南2丁目 1-24", ""], ["加島南公園　公衆トイレ", "Kashimaminami Koen Koshu Toire", 34.724828, 135.45919, 1, "大阪市淀川区加島1丁目 34", ""], ["新高中央公園　公衆トイレ", "Niitakachuo Koen Koshu Toire", 34.735535, 135.478018, 1, "大阪市淀川区新高4丁目 15-50", ""], ["瑞光寺公園　公衆トイレ", "Zuikoji Koen Koshu Toire", 34.749385, 135.53842, 0, "大阪市東淀川区瑞光2丁目 2-37", ""], ["淡路公園　公衆トイレ", "Awaji Koen Koshu Toire", 34.742647, 135.515734, 1, "大阪市東淀川区淡路5丁目 14-9", ""], ["豊里中央公園　公衆トイレ", "Toyosatochuo Koen Koshu Toire", 34.741946, 135.54293, 1, "大阪市東淀川区豊里5丁目 14-28", ""], ["日之出公園　公衆トイレ", "Hinode Koen Koshu Toire", 34.736947, 135.503436, 1, "大阪市東淀川区西淡路1丁目 5-7", ""], ["井高野公園　公衆トイレ", "Itakano Koen Koshu Toire", 34.765074, 135.543967, 1, "大阪市東淀川区井高野3丁目 3-79", ""], ["西淡路公園　公衆トイレ", "Nishiawaji Koen Koshu Toire", 34.738499, 135.508436, 1, "大阪市東淀川区西淡路3丁目 1-15", ""], ["北江口中央公園　公衆トイレ", "Kitaeguchichuo Koen Koshu Toire", 34.757973, 135.544467, 1, "大阪市東淀川区北江口2丁目 1-53", ""], ["淡路３公園　公衆トイレ", "Awaji Koen Koshu Toire", 34.737781, 135.512902, 1, "大阪市東淀川区淡路3丁目 13-56", ""], ["深江公園　公衆トイレ", "Fukae Koen Koshu Toire", 34.673917, 135.559214, 0, "大阪市東成区深江北2丁目 16-9", ""], ["神路公園　公衆トイレ", "Kamiji Koen Koshu Toire", 34.677702, 135.547791, 1, "大阪市東成区東中本2丁目 12-37", ""], ["東中本公園　公衆トイレ", "Higashinakamoto Koen Koshu Toire", 34.675905, 135.544879, 0, "大阪市東成区東中本3丁目 15-28", ""], ["東小橋公園　公衆トイレ", "Higashikohashi Koen Koshu Toire", 34.669628, 135.532865, 1, "大阪市東成区東小橋2丁目 1-30", ""], ["東小橋北公園　公衆トイレ", "Higashikohashikita Koen Koshu Toire", 34.673189, 135.533473, 1, "大阪市東成区東小橋1丁目 9-12", ""], ["東深江公園　公衆トイレ", "Higashifukae Koen Koshu Toire", 34.675679, 135.562144, 1, "大阪市東成区深江北3丁目 16-8", ""], ["桃谷公園　公衆トイレ", "Momodani Koen Koshu Toire", 34.659994, 135.529721, 1, "大阪市生野区桃谷1丁目 2-53", ""], ["巽公園　公衆トイレ", "Tatsumi Koen Koshu Toire", 34.651783, 135.546534, 1, "大阪市生野区巽西1丁目 7-10", ""], ["巽大地公園　公衆トイレ", "Tatsumidaichi Koen Koshu Toire", 34.647931, 135.550909, 0, "大阪市生野区巽中3丁目 9-3", ""], ["巽東緑地　公衆トイレ", "Tatsumihigashi Ryokuchi Koshu Toire", 34.644907, 135.56058, 1, "大阪市生野区巽東4丁目 11-47", ""], ["今津公園　公衆トイレ１", "Imazu Koen Koshu Toire", 34.69137, 135.569692, 1, "大阪市鶴見区今津中2丁目 3-54", ""], ["今津公園　公衆トイレ２", "Imazu Koen Koshu Toire", 34.691059, 135.571079, 1, "大阪市鶴見区今津中2丁目 3-23", ""], ["茨田大宮西公園　公衆トイレ", "Mattaoomiyanishi Koen Koshu Toire", 34.711723, 135.594016, 1, "大阪市鶴見区茨田大宮2丁目 7-24", ""], ["茨田大宮中央公園　公衆トイレ", "Mattaoomiyachuo Koen Koshu Toire", 34.71248, 135.59811, 1, "大阪市鶴見区茨田大宮4丁目 23-45", ""], ["鶴見中央公園　公衆トイレ", "Tsurumichuo Koen Koshu Toire", 34.697696, 135.565647, 1, "大阪市鶴見区鶴見1丁目 6-128", ""], ["長池公園　公衆トイレ", "Nagaike Koen Koshu Toire", 34.623206, 135.518734, 1, "大阪市阿倍野区長池町14", ""], ["桃ヶ池公園　公衆トイレ", "Momogaike Koen Koshu Toire", 34.630831, 135.521755, 1, "大阪市阿倍野区桃ケ池町1丁目 6-11", ""], ["聖天山公園　公衆トイレ", "Shotenyama Koen Koshu Toire", 34.635949, 135.503973, 1, "大阪市阿倍野区松虫通3丁目 2-55", ""], ["中加賀屋公園　公衆トイレ", "Nakakagaya Koen Koshu Toire", 34.619458, 135.481927, 1, "大阪市住之江区中加賀屋1丁目 5-5", ""], ["浜口西公園　公衆トイレ", "Hamaguchinishi Koen Koshu Toire", 34.610684, 135.483739, 0, "大阪市住之江区浜口西2丁目 6-14", ""], ["北加賀屋公園　公衆トイレ", "Kitakagaya Koen Koshu Toire", 34.622407, 135.475823, 0, "大阪市住之江区北加賀屋5丁目 3-11", ""], ["新北島東公園　公衆トイレ", "Shinkitajimahigashi Koen Koshu Toire", 34.60704, 135.469907, 1, "大阪市住之江区新北島3丁目 5-4", ""], ["浜口公園　公衆トイレ", "Hamaguchi Koen Koshu Toire", 34.60824, 135.484145, 1, "大阪市住之江区浜口西3丁目 4-9", ""], ["柴谷公園　公衆トイレ", "Shibatani Koen Koshu Toire", 34.61729, 135.465893, 1, "大阪市住之江区柴谷2丁目 7-26", ""], ["敷津浦東公園　公衆トイレ", "Shikitsurahigashi Koen Koshu Toire", 34.603108, 135.479336, 1, "大阪市住之江区御崎7丁目 15-36", ""], ["南港中央公園　公衆トイレ１", "Nankochuo Koen Koshu Toire", 34.631739, 135.431355, 1, "大阪市住之江区南港東8丁目 5-135", ""], ["南港中央公園　公衆トイレ２", "Nankochuo Koen Koshu Toire", 34.632525, 135.433101, 1, "大阪市住之江区南港東8丁目 5-18", ""], ["南港中央公園　公衆トイレ３", "Nankochuo Koen Koshu Toire", 34.631038, 135.434529, 1, "大阪市住之江区南港東8丁目 5-36", ""], ["平林泉公園　公衆トイレ", "Hirabayashiizumi Koen Koshu Toire", 34.612981, 135.462163, 1, "大阪市住之江区泉２丁目 1", ""], ["清水丘公園　公衆トイレ", "Shimizugaoka Koen Koshu Toire", 34.602366, 135.491733, 0, "大阪市住吉区清水丘2丁目 22-5", ""], ["おりおの南公園　公衆トイレ", "Orionominami Koen Koshu Toire", 34.596737, 135.492707, 0, "大阪市住吉区遠里小野7丁目 5-7", ""], ["万代池公園　公衆トイレ１", "Mandaiike Koen Koshu Toire", 34.62038, 135.503523, 1, "大阪市住吉区万代3丁目 7-82", ""], ["万代池公園　公衆トイレ２", "Mandaiike Koen Koshu Toire", 34.620004, 135.501058, 1, "大阪市住吉区万代3丁目 7-53", ""], ["沢之町公園　公衆トイレ", "Sawanocho Koen Koshu Toire", 34.603883, 135.501516, 1, "大阪市住吉区南住吉3丁目 15-29", ""], ["山之内西公園　公衆トイレ", "Yamanochinishi Koen Koshu Toire", 34.589055, 135.500527, 1, "大阪市住吉区山之内5丁目 3-36", ""], ["浅香中央公園　公衆トイレ１", "Asakachuo Koen Koshu Toire", 34.591632, 135.508942, 1, "大阪市住吉区浅香1丁目 6-68", ""], ["浅香中央公園　公衆トイレ２", "Asakachuo Koen Koshu Toire", 34.590774, 135.510187, 1, "大阪市住吉区浅香1丁目 6-20", ""], ["万領中央公園　公衆トイレ", "Manryochuo Koen Koshu Toire", 34.616481, 135.504296, 1, "大阪市住吉区万代東3丁目 1-55", ""], ["育和公園　公衆トイレ", "Ikuwa Koen Koshu Toire", 34.632884, 135.542358, 1, "大阪市東住吉区杭全8丁目 8-31", ""], ["平野白鷺公園　公衆トイレ１", "Hiranoshirasagi Koen Koshu Toire", 34.627708, 135.54222, 1, "大阪市東住吉区今川6丁目 7-54", ""], ["平野白鷺公園　公衆トイレ２", "Hiranoshirasagi Koen Koshu Toire", 34.626495, 135.541988, 1, "大阪市東住吉区今川6丁目 8-27", ""], ["今川公園　公衆トイレ", "Imagawa Koen Koshu Toire", 34.62648, 135.534653, 1, "大阪市東住吉区今川4丁目 23-17", ""], ["矢田公園　公衆トイレ", "Yata Koen Koshu Toire", 34.60096, 135.532706, 0, "大阪市東住吉区住道矢田1丁目 7-34", ""], ["うるし堤公園　公衆トイレ", "Urushitsutsumi Koen Koshu Toire", 34.63122, 135.534729, 1, "大阪市東住吉区今川1丁目 1-7", ""], ["照ヶ丘矢田公園　公衆トイレ", "Terugaokayata Koen Koshu Toire", 34.608376, 135.534431, 0, "大阪市東住吉区照ケ丘矢田1丁目 16-37", ""], ["矢田教育の森公園　公衆トイレ", "Yatakyoikunomori Koen Koshu Toire", 34.599542, 135.528245, 0, "大阪市東住吉区矢田5丁目 2-38", ""], ["鞍作公園　公衆トイレ", "Kuratsukuri Koen Koshu Toire", 34.622827, 135.571003, 1, "大阪市平野区加美南1丁目 11-25", ""], ["平野西公園　公衆トイレ", "Hiranonishi Koen Koshu Toire", 34.61933, 135.545983, 1, "大阪市平野区平野西3丁目 5-7", ""], ["長吉東部中央公園　公衆トイレ", "Nagayoshitobuchuo Koen Koshu Toire", 34.603415, 135.577401, 1, "大阪市平野区長吉長原東2丁目 6-53", ""], ["長吉出戸公園　公衆トイレ", "Nagayoshideto Koen Koshu Toire", 34.613294, 135.565336, 1, "大阪市平野区長吉出戸1丁目 11-40", ""], ["喜連西中央公園　公衆トイレ", "Kirenishichuo Koen Koshu Toire", 34.613059, 135.541161, 1, "大阪市平野区喜連西2丁目 1-39", ""], ["川辺大和川公園　公衆トイレ", "Kawanabeyamatogawa Koen Koshu Toire", 34.596486, 135.567223, 1, "大阪市平野区長吉長原西4丁目 5-48", ""], ["天下茶屋公園　公衆トイレ", "Tengachaya Koen Koshu Toire", 34.632633, 135.497326, 0, "大阪市西成区岸里東1丁目 16-21", ""], ["西皿池公園　公衆トイレ", "Nishisaraike Koen Koshu Toire", 34.636793, 135.493266, 0, "大阪市西成区潮路1丁目 4-25", ""], ["玉出西公園　公衆トイレ", "Tamadenishi Koen Koshu Toire", 34.626681, 135.489626, 1, "大阪市西成区玉出西1丁目 9-15", ""], ["北津守公園　公衆トイレ", "Kitatsumori Koen Koshu Toire", 34.650431, 135.481211, 0, "大阪市西成区北津守3丁目 10-23", ""], ["西成公園　公衆トイレ", "Nishinari Koen Koshu Toire", 34.646169, 135.482016, 1, "大阪市西成区津守1丁目 13-14", ""], ["南津守中央公園　公衆トイレ", "Minamitsumorichuo Koen Koshu Toire", 34.625763, 135.483396, 1, "大阪市西成区南津守7丁目 10-37", ""], ["南津守さくら公園　公衆トイレ", "Minamitsumorisakura Koen Koshu Toire", 34.635979, 135.483623, 1, "大阪市西成区南津守1丁目 3-4", ""], ["鶴見橋中央公園　公衆トイレ", "Tsurumibashichuo Koen Koshu Toire", 34.646352, 135.492546, 1, "大阪市西成区鶴見橋2丁目５", ""], ["瓦屋町公園　公衆トイレ2", "Kawarayamachi Koen Koshu Toire", 34.670399, 135.512845, 0, "大阪市中央区瓦屋町2丁目 9-25", ""], ["平野公園　公衆トイレ２", "Hirano Koen Koshu Toire", 34.62212, 135.559118, 1, "大阪市平野区平野東2丁目 11-46", ""], ["ポートタウン東駅前公衆トイレ", "Pototaunhigashiekimae Koshu Toire", 34.631144, 135.430105, 1, "大阪市住之江区南港中2-1", "障害者用トイレあり"], ["舞洲運動広場（公衆便所）", "Maishima Undo Hiroba", 34.662999, 135.401132, 1, "大阪市此花区北港緑地1丁目 2-25", "【男性用】洋：1　和：2　小：10　【女性用】洋：4　和：5　【障がい者用】洋：1"], ["常吉西臨港緑地便所（北）", "Tsuneyoshinishirinko Ryokuchi Koshu Benjo Kita", 34.675489, 135.411291, 1, "大阪市此花区常吉2-13", "【男性用】和：1　小：2　【女性用】和：2　【障がい者用】洋：1"], ["常吉西臨港緑地便所（南）", "Tsuneyoshinishirinko Ryokuchi Koshu Benjo Minami", 34.672921, 135.409826, 1, "大阪市此花区常吉2-13", "【男性用】和：1　小：2　【女性用】和：2　【障がい者用】洋：1"], ["野鳥園臨港緑地（公衆便所）", "Yachoenrinko Ryokuchi Koshu Benjo", 34.637041, 135.402136, 0, "大阪市住之江区南港北2丁目 5-103", "【男性用】和：1　小：2　【女性用】和：1"], ["野鳥園臨港緑地（公衆便所）", "Yachoenrinko Ryokuchi Koshu Benjo", 34.634731, 135.401048, 1, "大阪市住之江区南港北3丁目 5-50", "【男性用】洋：1　和：1　小：3　【女性用】洋：1　和：2　【障がい者用】洋：1"], ["天保山ハーバービレッジ（公衆便所）", "Tenpozanhababirejji Koshu Benjo", 34.656105, 135.43105, 1, "大阪市港区海岸通１", "【男性用】和：1　小：2　【女性用】和：2　【障がい者用】洋：1"], ["舞洲体育館（公衆便所）", "Maishima Taiikukan", 34.664773, 135.396461, 1, "大阪市此花区北港緑地2丁目 2-49", "【男性用】洋：1(乳幼児イス設置)　和：1　小：5　【女性用】洋：2(1箇所乳幼児イス設置)　和：3　【障がい者用】洋：2(2箇所とも乳幼児ベッド設置)"], ["蕪村公園　公衆トイレ", "Buson Koen Koshu Toire", 34.718185, 135.520086, 1, "大阪市都島区毛馬町１丁目１２ 城北公園通", ""], ["大阪城公園　公衆トイレ１０", "Oosakajo Koen Koshu Toire", 34.682651, 135.52722, 1, "大阪市中央区大阪城３－１５", ""], ["歌島公園　公衆トイレ", "Utajima Koen Koshu Toire", 34.719207, 135.458357, 1, "大阪市西淀川区御幣島５丁目７", ""], ["中島公園　公衆トイレ３", "Nakajima Koen Koshu Toire", 34.700942, 135.423574, 1, "大阪市西淀川区中島１丁目３５－１０４", ""], ["中島公園　公衆トイレ４", "Nakajima Koen Koshu Toire", 34.702159, 135.421343, 1, "大阪市西淀川区中島２丁目３－８７", ""], ["新森中央公園　公衆トイレ", "Shinmorichuo Koen Koshu Toire", 34.718088, 135.556524, 1, "大阪市旭区新森４丁目２２－３２", ""], ["花博記念公園鶴見緑地　公衆トイレ１８", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.714348, 135.580376, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ１９", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.714397, 135.56983, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ２０", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.716006, 135.576412, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ２１", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.707328, 135.58057, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ２２", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.705612, 135.580392, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ２３", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.71086, 135.574347, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ２４", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.712977, 135.57984, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ２５", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.709877, 135.570136, 1, "大阪市鶴見区緑地公園", ""], ["花博記念公園鶴見緑地　公衆トイレ２６", "Hanahakukinen Koen Tsurumi Ryokuchi Koshu Toire", 34.711777, 135.56748, 1, "大阪市鶴見区緑地公園", ""], ["弁天町公衆トイレ", "Bentencho Koshu Toire", 34.669425, 135.462724, 1, "大阪市港区波除3-11", "便器数　男性用　洋：１　小：２　　男女兼用　車いす対応（ｵｽﾄﾒｲﾄ有）：１"], ["天王寺公園南口公衆トイレ", "Tennoji Koen Minamiguchi Koshu Toire", 34.648854, 135.505771, 0, "大阪市西成区山王1-17", "便器数　　男性用　小：４　　男女兼用　和：１"], ["東入船町公衆トイレ", "Higashiirifunecho Koshu Toire", 34.646985, 135.50248, 0, "大阪市西成区萩之茶屋1-14", "便器数　　男性用　小：２　　男女兼用　和：１"], ["萩之茶屋北公園公衆トイレ", "Haginochayakita Koen Koshu Toire", 34.647618, 135.500857, 1, "大阪市西成区萩之茶屋1-13", "便器数　　男性用　小：２　　男女兼用　車いす対応（ｵｽﾄﾒｲﾄ有）：１"], ["今池町公衆トイレ", "Imaikecho Koshu Toire", 34.645736, 135.502172, 0, "大阪市西成区萩之茶屋2-2", "便器数　　男性用　小：２　　男女兼用　和：１"], ["北港白津ふ頭港湾労働者休憩所（ウイング舞洲）", "Hokkoshiratsufutokowanrodoshakyukeijoingumaishima", 34.66024, 135.40739, 0, "大阪市此花区北港白津1-12-60", ""], ["大阪港湾労働者福祉センター", "Oosakakowanrodoshafukushisenta", 34.65365, 135.44323, 0, "大阪市港区港晴2-14-25", ""], ["第3突堤港湾労働者便所", "Daitotteikowanrodosha Benjo", 34.64694, 135.44934, 0, "大阪市港区海岸通4-5", ""], ["安治川1号港湾労働者休憩所", "Ajigawagokowanrodoshakyukeijo", 34.66107, 135.44266, 0, "大阪市港区石田3-3-38", ""], ["安治川2号港湾労働者休憩所", "Ajikawagokowanrodoshakyukeijo", 34.66824, 135.44979, 0, "大阪市港区石田1-5-41", ""], ["マーメイド広場便所", "Mameido Hiroba Benjo", 34.65375, 135.428666, 0, "大阪市港区海岸通1", ""], ["大阪第2港湾労働者福祉センター", "Oosakadaikowanrodoshafukushisenta", 34.64524, 135.46505, 0, "大阪市大正区小林西1-25-2", ""], ["大正第1突堤港湾労働者便所", "Taishodaitotteikowanrodosha Benjo", 34.64519, 135.46243, 0, "大阪市大正区小林西1-31", ""], ["南港コンテナふ頭港湾労働者便所", "Nankokontenafutokowanrodosha Benjo", 34.62981, 135.4377, 0, "大阪市住之江区南港東5-1", ""], ["南港中ふ頭港湾労働者便所", "Nankonakafutokowanrodosha Benjo", 34.62973, 135.41239, 0, "大阪市住之江区南港中6-7", ""], ["南港ポートタウン東駅前広場", "Nankopototaunhigashiekimae Hiroba", 34.631413, 135.429274, 0, "大阪市住之江区南港中2-1", ""], ["南港南ふ頭港湾労働者便所", "Nankominamifutokowanrodosha Benjo", 34.61513, 135.41101, 0, "大阪市住之江区南港南6-1", ""], ["南港重量物ふ頭港湾労働者休憩所（ウイング南港）", "Nankojuryobutsufutokowanrodoshakyukeijoingunanko", 34.63419, 135.40134, 0, "大阪市住之江区南港北3-3-3", ""], ["加賀屋緑地　公衆トイレ・事務所", "Kagaya Ryokuchi Koshu Toire", 34.602144, 135.475521, 0, "大阪市住之江区南加賀屋4", ""], ["毛馬桜之宮公園　公衆トイレ（川崎橋側）", "Kemasakuranomiya Koen Koshu Toire", 34.693707, 135.521153, 0, "大阪市北区天満１丁目1-139", ""], ["毛馬桜之宮公園　公衆トイレ（艇庫横）", "Kemasakuranomiya Koen Koshu Toire", 34.70062, 135.523095, 0, "大阪市都島区中野町１丁目10-8", ""], ["毛馬桜之宮公園　公衆トイレ（友渕北）", "Kemasakuranomiya Koen Koshu Toire", 34.715576, 135.522497, 0, "大阪市都島区友渕町１丁目1-6", ""], ["毛馬桜之宮公園　公衆トイレ（藤田邸跡）", "Kemasakuranomiya Koen Koshu Toire", 34.694801, 135.523889, 0, "大阪市都島区網島町10", ""], ["毛馬桜之宮公園　公衆トイレ（市公館横（2））", "Kemasakuranomiya Koen Koshu Toire", 34.695663, 135.523817, 0, "大阪市都島区網島町10", ""], ["正蓮寺川公園　公衆トイレ", "Shorenjigawa Koen Koshu Toire", 34.6859, 135.458776, 0, "大阪市此花区朝日2", ""], ["南港東公園　公衆トイレ", "Nankohigashi Koen Koshu Toire", 34.612301, 135.443004, 0, "大阪市住之江区南港東2-1外", ""], ["六反さくら公園　公衆トイレ", "Rokutansakura Koen Koshu Toire", 34.609674, 135.580781, 0, "大阪市平野区長吉六反1", ""]];
+
+/* 商業施設・地下街シード（座標・営業時間は要検証のデモデータ）
+   [名称, 英語名, 緯度, 経度, ♿, 住所, フロア, 開店(分), 閉店(分), 種別] 種別: 1=地下街 2=商業施設 3=24時間店 */
+const SHOPS = [
+["ホワイティうめだ","Whity Umeda",34.7040,135.5006,1,"大阪市北区小松原町 梅田地下街","B1F",600,1320,1],
+["ディアモール大阪","Diamor Osaka",34.7003,135.4977,1,"大阪市北区梅田1 地下街","B1F",600,1260,1],
+["阪急うめだ本店","Hankyu Umeda Main Store",34.7024,135.4987,1,"大阪市北区角田町8-7","各階 Every floor",600,1200,2],
+["阪神梅田本店","Hanshin Umeda Main Store",34.7013,135.4970,1,"大阪市北区梅田1-13-13","各階 Every floor",600,1200,2],
+["グランフロント大阪","Grand Front Osaka",34.7047,135.4941,1,"大阪市北区大深町","各階 Every floor",600,1380,2],
+["ルクア大阪","LUCUA Osaka",34.7021,135.4956,1,"大阪市北区梅田3-1-3","各階 Every floor",630,1380,2],
+["ヨドバシ梅田 LINKS UMEDA","Yodobashi Umeda / LINKS",34.7047,135.4967,1,"大阪市北区大深町1-1","各階 Every floor",570,1320,2],
+["HEP FIVE","HEP FIVE",34.7043,135.5007,1,"大阪市北区角田町5-15","各階 Every floor",660,1260,2],
+["ドン・キホーテ梅田本店","Don Quijote Umeda",34.7020,135.5040,0,"大阪市北区小松原町(要確認)","",0,1440,3],
+["なんばウォーク","Namba Walk",34.6663,135.5047,1,"大阪市中央区千日前 地下街","B1F・B8出口付近ほか / incl. near Exit B8",600,1320,1],
+["ラウンドワンスタジアム千日前(難波)","Round1 Stadium Sennichimae",34.6675,135.5029,0,"大阪市中央区難波1-3-1","館内 In-store",0,1440,3],
+["御堂筋グランドビル","Midosuji Grand Building",34.6676,135.4998,0,"大阪市中央区難波2-2-3","B1F なんばウォーク24番出口直結 / Namba Walk Exit 24",600,1260,2],
+["近鉄難波ビル","Kintetsu Namba Building",34.6668,135.4998,0,"大阪市中央区難波4-1-15","B2F 飲食店街 / Restaurant floor B2",600,1260,2],
+["NAMBAなんなん","NAMBA Nannan",34.6646,135.5018,1,"大阪市中央区難波5 地下街","B1F・E5付近ほか3カ所 / incl. E5 & 3 more",600,1260,1],
+["なんばCITY","Namba City",34.6620,135.5017,1,"大阪市中央区難波5-1-60","各階・B2Fユニクロ側など / incl. B2F (Uniqlo side)",600,1260,2],
+["なんばパークス","Namba Parks",34.6608,135.5024,1,"大阪市浪速区難波中2-10-70","各階 Every floor",660,1380,2],
+["高島屋大阪店","Takashimaya Osaka",34.6627,135.5010,1,"大阪市中央区難波5-1-5","各階 Every floor",600,1200,2],
+["クリスタ長堀","Crysta Nagahori",34.6752,135.5031,1,"大阪市中央区南船場 地下街","B1F",660,1260,1],
+["大丸心斎橋店","Daimaru Shinsaibashi",34.6748,135.5013,1,"大阪市中央区心斎橋筋1-7-1","各階 Every floor",600,1200,2],
+["心斎橋PARCO","Shinsaibashi PARCO",34.6744,135.5011,1,"大阪市中央区心斎橋筋1-8-3","各階 Every floor",600,1200,2],
+["ドン・キホーテ道頓堀店","Don Quijote Dotonbori",34.6686,135.5033,0,"大阪市中央区宗右衛門町7-13","",0,1440,3],
+["あべちか","Abechika",34.6459,135.5138,1,"大阪市阿倍野区 天王寺地下街","B1F",600,1260,1],
+["あべのハルカス近鉄本店","Abeno Harukas Kintetsu",34.6453,135.5136,1,"大阪市阿倍野区阿倍野筋1-1-43","各階 Every floor",600,1230,2],
+["天王寺ミオ","Tennoji MIO",34.6473,135.5145,1,"大阪市天王寺区悲田院町10-39","各階 Every floor",660,1260,2],
+["京阪モール","Keihan Mall (Kyobashi)",34.6969,135.5337,1,"大阪市都島区東野田町2-1-38","各階 Every floor",600,1260,2],
+["ユニバーサル・シティウォーク大阪","Universal CityWalk Osaka",34.6660,135.4390,1,"大阪市此花区島屋6-2-61","各階 Every floor",660,1320,2],
+["大丸梅田店","Daimaru Umeda",34.7008,135.4959,1,"大阪市北区梅田3-1-1","各階 Every floor",600,1200,2],
+["阪急三番街","Hankyu Sanbangai",34.7048,135.4986,1,"大阪市北区芝田1-1-3","B2F-2F",600,1380,2],
+["NU茶屋町","NU Chayamachi",34.7060,135.5000,1,"大阪市北区茶屋町10-12","各階 Every floor",660,1380,2],
+["ハービスPLAZA","Herbis Plaza",34.7002,135.4938,1,"大阪市北区梅田2-5-25","各階 Every floor",660,1260,2],
+["大阪駅前ビル(第1〜4)地下","Osaka Ekimae Bldg B1-B2",34.7002,135.4994,0,"大阪市北区梅田1 地下飲食街","B1F-B2F",600,1320,1],
+["ビックカメラなんば店","Bic Camera Namba",34.6642,135.5005,1,"大阪市中央区千日前2-10-1","各階 Every floor",600,1260,2],
+["エディオンなんば本店","Edion Namba Main Store",34.6656,135.5014,1,"大阪市中央区難波3-2-18","各階 Every floor",600,1260,2],
+["なんばスカイオ","Namba Skyo",34.6631,135.5028,1,"大阪市中央区難波5-1-60","各階 Every floor",660,1380,2],
+["なんばマルイ","Namba Marui",34.6650,135.5015,1,"大阪市中央区難波3-8-9","各階 Every floor",660,1200,2],
+["心斎橋オーパ","Shinsaibashi OPA",34.6738,135.5002,1,"大阪市中央区西心斎橋1-4-3","各階 Every floor",660,1260,2],
+["船場センタービル(地下)","Semba Center Bldg",34.6816,135.5010,0,"大阪市中央区船場中央 地下","B1F-B2F",600,1110,1],
+["淀屋橋odona","Yodoyabashi Odona",34.6925,135.5008,1,"大阪市中央区今橋4-1-1","各階 Every floor",660,1260,2],
+["あべのキューズモール","Abeno Q's Mall",34.6449,135.5069,1,"大阪市阿倍野区阿倍野筋1-6-1","各階 Every floor",600,1260,2],
+["京橋コムズガーデン","Kyobashi Com's Garden",34.6957,135.5333,1,"大阪市都島区東野田町2 地下街","B1F",600,1260,1],
+["イオンモール大阪ドームシティ","AEON Mall Osaka Dome City",34.6690,135.4759,1,"大阪市西区千代崎3-13-1","各階 Every floor",600,1320,2],
+["近鉄百貨店上本町店","Kintetsu Dept. Uehommachi",34.6656,135.5417,1,"大阪市天王寺区上本町6-1-55","各階 Every floor",600,1200,2],
+["アルデ新大阪","Alde Shin-Osaka",34.7336,135.5008,1,"大阪市淀川区西中島5-16-1 新大阪駅ビル(改札外)","2F-3F",600,1230,2]
+];
+
+const STR = {
+ja:{ttl:'大阪トイレマップ',near:'いちばん近いトイレ',min:'徒歩約{n}分',acc:'車いす対応のみ',free:'公衆トイレ・無料',wc:'車いす対応',addr:'住所（この画面を見せて道を聞けます）',hint:'困ったら、この画面を近くの人に見せてみてください',nav1:'マップで案内',nav2:'Googleマップ',demoT:'現在地を選んでください',demoP:'プロトタイプのため、デモ地点を選ぶか、地図をタップして現在地を設定できます。',gps:'📍 現在地（GPS）を使う',tap:'地図をタップすると現在地を移動できます',noacc:'♿ 対応トイレを近い順に表示中',all:'すべてのトイレを表示中',fx:'設備',gpsng:'GPSを取得できません。地図をタップして現在地を設定できます',gpsdeny:'位置情報が許可されていません。ブラウザ設定で許可するか、地図をタップして現在地を設定してください',ad:'広告',open:'営業中',closed:'営業時間外',hours:'営業時間',t0:'公衆トイレ',t1:'地下街',t2:'商業施設',t3:'24時間',tpCap:'時間を動かして夜のトイレ事情を体感',now:'現在時刻に戻す',verify:'⚠ 商業施設の位置・営業時間はデモ用の暫定データです（公開前に要検証）',floor:'トイレの場所'},
+en:{ttl:'Osaka Toilet Map',near:'Nearest toilet',min:'{n} min walk',acc:'Accessible only',free:'Public toilet · Free',wc:'Wheelchair accessible',addr:'Address (show this to ask for directions)',hint:'Lost? Show this screen to someone nearby',nav1:'Open in Maps',nav2:'Google Maps',demoT:'Where are you?',demoP:'This is a prototype — pick a demo spot, or tap anywhere on the map to set your location.',gps:'📍 Use my location (GPS)',tap:'Tap the map to move your location',noacc:'♿ Showing accessible toilets only',all:'Showing all toilets',fx:'Facilities',gpsng:'GPS unavailable — tap the map to set your location',gpsdeny:'Location permission denied. Allow it in browser settings, or tap the map to set your location',ad:'AD',open:'Open now',closed:'Closed now',hours:'Hours',t0:'Public',t1:'Underground mall',t2:'Shopping',t3:'24h',tpCap:'Move the clock to see the night-time picture',now:'Back to now',verify:'⚠ Commercial locations & hours are demo seed data (verify before launch)',floor:'Toilet location'},
+zh:{ttl:'大阪洗手间地图',near:'最近的洗手间',min:'步行约{n}分钟',acc:'仅无障碍',free:'公共厕所·免费',wc:'无障碍设施',addr:'地址（可出示此画面向路人问路）',hint:'迷路了？把这个画面给附近的人看看',nav1:'打开地图导航',nav2:'谷歌地图',demoT:'您在哪里？',demoP:'这是原型版 — 请选择演示地点，或点击地图设置您的位置。',gps:'📍 使用当前位置（GPS）',tap:'点击地图可移动您的位置',noacc:'♿ 仅显示无障碍洗手间',all:'显示全部洗手间',fx:'设施',gpsng:'无法获取GPS，请点击地图设置您的位置',gpsdeny:'定位权限被拒绝。请在浏览器设置中允许，或点击地图设置位置',ad:'广告',open:'营业中',closed:'已打烊',hours:'营业时间',t0:'公共厕所',t1:'地下街',t2:'商业设施',t3:'24小时',tpCap:'拖动时间，体验夜间的洗手间状况',now:'回到现在',verify:'⚠ 商业设施的位置和营业时间为演示数据（上线前需核实）',floor:'洗手间位置'},
+ko:{ttl:'오사카 화장실 지도',near:'가장 가까운 화장실',min:'도보 약 {n}분',acc:'휠체어 전용',free:'공중화장실·무료',wc:'휠체어 이용 가능',addr:'주소 (이 화면을 보여주고 길을 물어보세요)',hint:'길을 잃었다면 근처 사람에게 이 화면을 보여주세요',nav1:'지도 앱으로 안내',nav2:'구글 지도',demoT:'어디에 계신가요?',demoP:'프로토타입입니다. 데모 지점을 선택하거나 지도를 탭해 위치를 설정하세요.',gps:'📍 내 위치(GPS) 사용',tap:'지도를 탭하면 위치를 이동할 수 있습니다',noacc:'♿ 휠체어 대응 화장실만 표시 중',all:'모든 화장실 표시 중',fx:'시설',gpsng:'GPS를 사용할 수 없습니다. 지도를 탭해 현재 위치를 설정할 수 있습니다',gpsdeny:'위치 권한이 거부되었습니다. 브라우저 설정에서 허용하거나 지도를 탭해 위치를 설정하세요',ad:'광고',open:'영업 중',closed:'영업 종료',hours:'영업시간',t0:'공중화장실',t1:'지하상가',t2:'상업시설',t3:'24시간',tpCap:'시간을 움직여 밤의 화장실 사정을 체험',now:'현재 시각으로',verify:'⚠ 상업시설의 위치·영업시간은 데모용 데이터입니다 (공개 전 검증 필요)',floor:'화장실 위치'}
+};
+const DEMOS = [
+ ['梅田 Umeda',34.7025,135.4959],['なんば Namba',34.6635,135.5023],
+ ['道頓堀 Dotonbori',34.6687,135.5013],['天王寺 Tennoji',34.6465,135.5136],
+ ['大阪城 Osaka Castle',34.6873,135.5262],['新世界 Shinsekai',34.6525,135.5063]
+];
+
+/* 統合リスト: {name, roma, lat, lng, wc, addr, fx, type, open, close, floor} */
+const ALL = [];
+TOILETS.forEach(t=>ALL.push({name:t[0],roma:t[1],lat:t[2],lng:t[3],wc:t[4],addr:t[5],fx:t[6],type:0,open:0,close:1440,floor:''}));
+SHOPS.forEach(s=>ALL.push({name:s[0],roma:s[1],lat:s[2],lng:s[3],wc:s[4],addr:s[5],floor:s[6],open:s[7],close:s[8],type:s[9],fx:''}));
+
+let lang = (nav => nav.startsWith('ja')?'ja':nav.startsWith('zh')?'zh':nav.startsWith('ko')?'ko':'en')(navigator.language||'en');
+let me = null, accOnly = false, selIdx = -1, markers = [], meMarker = null, circle = null, nearest = [];
+let simMin = null; // null = 実時刻
+
+const map = L.map('map',{zoomControl:false}).setView([34.6812,135.5100],13);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+  attribution:'&copy; OpenStreetMap &copy; CARTO | データ: 大阪市 (CC BY)',maxZoom:19}).addTo(map);
+
+const $ = id => document.getElementById(id);
+const T = k => STR[lang][k];
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2600);}
+function hav(a,b,c,d){const R=6371000,p=Math.PI/180,x=Math.sin((c-a)*p/2),y=Math.sin((d-b)*p/2);
+  return 2*R*Math.asin(Math.sqrt(x*x+Math.cos(a*p)*Math.cos(c*p)*y*y));}
+function fmtD(m){return m<1000?Math.round(m)+'m':(m/1000).toFixed(1)+'km';}
+function walkMin(m){return T('min').replace('{n}',Math.max(1,Math.round(m/80)));}
+function nowMin(){ if(simMin!==null) return simMin;
+  const d=new Date(); return d.getHours()*60+d.getMinutes(); }
+function fmtT(min){return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0');}
+function isOpen(it){ if(it.type===0||it.type===3) return true;
+  const t=nowMin(); return t>=it.open && t<it.close; }
+function hoursStr(it){ return it.type===3 ? '24h' : fmtT(it.open)+'–'+fmtT(it.close); }
+
+const TOILET_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><circle cx="7.5" cy="4.4" r="2.1"/><path d="M5.2 7.2h4.6c.9 0 1.5.6 1.5 1.5v5h-1.6v8h-4.4v-8H3.7v-5c0-.9.6-1.5 1.5-1.5z"/><circle cx="17" cy="4.4" r="2.1"/><path d="M17 7c1 0 1.7.5 2 1.4l1.9 5.6h-1.9l1.2 3.7h-2.4v4h-3.6v-4h-2.4l1.2-3.7h-1.9l1.9-5.6c.3-.9 1-1.4 2-1.4z"/></svg>';
+function pinIcon(it,sel){
+  const open=isOpen(it);
+  const cls = sel?' sel' : !open?' off' : it.type===1?' t1' : it.type===2?' t2' : it.type===3?' t3' : '';
+  return L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],
+   html:`<div class="pin${cls}">${TOILET_SVG}</div>`});
+}
+function visible(it){ return !(accOnly && !it.wc); }
+function drawMarkers(){
+  markers.forEach(m=>map.removeLayer(m)); markers=[];
+  ALL.forEach((it,i)=>{
+    if(!visible(it)) return;
+    const m=L.marker([it.lat,it.lng],{icon:pinIcon(it, i===selIdx),zIndexOffset:isOpen(it)?100:0}).addTo(map);
+    m.on('click',()=>select(i,true)); markers.push(m);
+  });
+}
+function setMe(lat,lng,label){
+  me=[lat,lng];
+  if(meMarker) map.removeLayer(meMarker);
+  if(circle) map.removeLayer(circle);
+  meMarker=L.marker(me,{icon:L.divIcon({className:'',iconSize:[18,18],iconAnchor:[9,9],html:'<div class="mepin"></div>'}),zIndexOffset:900}).addTo(map);
+  circle=L.circle(me,{radius:300,color:'#E2543B',weight:1.5,dashArray:'5 6',fillColor:'#E2543B',fillOpacity:.06}).addTo(map);
+  refresh(); map.setView(me,15);
+  if(label) toast(label);
+}
+function refresh(){
+  updateTimeUI();
+  if(!me){ drawMarkers(); return; }
+  const pool = ALL.map((it,i)=>({i,it,d:hav(me[0],me[1],it.lat,it.lng)}))
+    .filter(x=>visible(x.it) && isOpen(x.it)).sort((a,b)=>a.d-b.d);
+  nearest = pool.slice(0,3);
+  if(nearest.length){
+    const n=nearest[0];
+    $('bandN').textContent = n.it.roma && lang!=='ja' ? n.it.roma : n.it.name;
+    $('bandD').textContent = fmtD(n.d);
+    $('bandW').textContent = walkMin(n.d);
+  } else { $('bandN').textContent='—'; $('bandD').textContent='—'; $('bandW').textContent=''; }
+  const list=$('list'); list.innerHTML='';
+  nearest.forEach((x,rank)=>{
+    const r=document.createElement('div');
+    r.className='row'+(x.i===selIdx?' sel':'');
+    const nm = lang==='ja'? x.it.name : (x.it.roma||x.it.name);
+    const sub = (x.it.type>0 ? T('t'+x.it.type)+' · '+hoursStr(x.it)+' · ' : '') + (lang==='ja'? (x.it.roma||x.it.addr) : x.it.name);
+    r.innerHTML=`<div class="num">${rank+1}</div>
+      <div class="info"><div class="name">${nm}${x.it.wc?'<span class="badge">♿</span>':''}</div>
+      <div class="sub">${sub}</div></div>
+      <div class="meta"><div class="d">${fmtD(x.d)}</div><div class="w">${walkMin(x.d)}</div></div>`;
+    r.onclick=()=>select(x.i,true);
+    list.appendChild(r);
+  });
+  drawMarkers();
+}
+function select(i,openDetail){
+  selIdx=i; const it=ALL[i];
+  refresh();
+  if(openDetail){
+    $('list').style.display='none'; $('detail').style.display='block';
+    $('dName').textContent=it.name;
+    $('dRoma').textContent=it.roma;
+    let tags='';
+    if(it.type===0) tags+=`<span class="tag free">${T('free')}</span>`;
+    else {
+      tags+=`<span class="tag type${Math.min(it.type,2)}">${T('t'+it.type)}</span>`;
+      tags+=`<span class="tag ${isOpen(it)?'open':'closed'}">${isOpen(it)?T('open'):T('closed')} · ${hoursStr(it)}</span>`;
+    }
+    if(it.wc) tags+=`<span class="tag wc">♿ ${T('wc')}</span>`;
+    $('dTags').innerHTML=tags;
+    $('dAddrCap').textContent=T('addr');
+    $('dAddr').textContent=it.addr + (it.floor?` ｜ ${T('floor')}: ${it.floor}`:'');
+    $('dFx').textContent=it.fx?T('fx')+': '+it.fx:'';
+    const v=$('dVerify');
+    if(it.type>0){ v.style.display='block'; v.textContent=T('verify'); } else v.style.display='none';
+    $('dHint').textContent=T('hint');
+    const d=me?hav(me[0],me[1],it.lat,it.lng):null;
+    $('bandN').textContent = lang==='ja'? it.name : (it.roma||it.name);
+    $('bandD').textContent = d?fmtD(d):'—';
+    $('bandW').textContent = d?walkMin(d):'';
+    map.setView([it.lat,it.lng],17);
+    $('navApple').onclick=()=>window.open(`https://maps.apple.com/?daddr=${it.lat},${it.lng}&dirflg=w`,'_blank');
+    $('navGoogle').onclick=()=>window.open(`https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}&travelmode=walking`,'_blank');
+  }
+}
+function closeDetail(){selIdx=-1;$('detail').style.display='none';$('list').style.display='block';refresh();}
+
+/* 時刻シミュレーター */
+function updateTimeUI(){
+  const t=nowMin();
+  $('timePill').textContent='🕐 '+fmtT(t);
+  $('timePill').classList.toggle('sim',simMin!==null);
+  $('tpTime').textContent=fmtT(t);
+  $('tpRange').value=t;
+}
+$('timePill').onclick=()=>{const p=$('timePanel');p.style.display=p.style.display==='block'?'none':'block';updateTimeUI();};
+$('tpRange').oninput=e=>{simMin=parseInt(e.target.value,10);closeDetailIfClosed();refresh();};
+$('tpNow').onclick=()=>{simMin=null;$('timePanel').style.display='none';refresh();};
+function closeDetailIfClosed(){ if(selIdx>=0 && ALL[selIdx].type>0 && !isOpen(ALL[selIdx])){} }
+
+function applyLang(){
+  document.documentElement.lang=lang;
+  document.querySelectorAll('#langs button').forEach(b=>b.classList.toggle('on',b.dataset.l===lang));
+  $('ttl').textContent=T('ttl');
+  $('bandT').textContent=T('near');
+  $('accLbl').textContent=T('acc');
+  $('demoT').textContent=T('demoT');$('demoP').textContent=T('demoP');$('demoGps').textContent=T('gps');
+  $('navLbl1').textContent=T('nav1');$('navLbl2').textContent=T('nav2');
+  $('adTag').textContent=T('ad');
+  $('tpCap').textContent=T('tpCap');$('tpNow').textContent=T('now');
+  $('legend').innerHTML=
+    `<span><i style="background:#16295B"></i>${T('t0')}</span>`+
+    `<span><i style="background:#C77800"></i>${T('t1')}</span>`+
+    `<span><i style="background:#7A3E9D"></i>${T('t2')}</span>`+
+    `<span><i style="background:#1F8A5B"></i>${T('t3')}</span>`+
+    `<span><i style="background:#A8ADB8"></i>${T('closed')}</span>`;
+  refresh();
+}
+document.querySelectorAll('#langs button').forEach(b=>b.onclick=()=>{lang=b.dataset.l;applyLang();});
+
+$('accChip').onclick=()=>{accOnly=!accOnly;$('accChip').classList.toggle('on',accOnly);
+  toast(accOnly?T('noacc'):T('all'));closeDetail();};
+
+$('signband').onclick=()=>{ if($('detail').style.display==='block'){closeDetail();} else if(nearest.length){select(nearest[0].i,true);} };
+
+map.on('click',e=>{ $('timePanel').style.display='none'; setMe(e.latlng.lat,e.latlng.lng); closeDetail(); });
+
+function tryGPS(fromBtn){
+  if(!navigator.geolocation){ if(fromBtn)toast(T('gpsng')); return; }
+  navigator.geolocation.getCurrentPosition(
+    p=>{ $('demo').style.display='none'; setMe(p.coords.latitude,p.coords.longitude); closeDetail(); },
+    e=>{ toast(T(e && e.code===1 ? 'gpsdeny' : 'gpsng')); },
+    {enableHighAccuracy:true,timeout:10000,maximumAge:15000});
+}
+$('locate').onclick=()=>tryGPS(true);
+$('demoGps').onclick=()=>tryGPS(true);
+
+DEMOS.forEach(d=>{
+  const b=document.createElement('button');b.textContent=d[0];
+  b.onclick=()=>{$('demo').style.display='none';setMe(d[1],d[2]);toast(T('tap'));};
+  $('demoGrid').appendChild(b);
+});
+
+setInterval(()=>{ if(simMin===null) updateTimeUI(); },30000);
+applyLang();
+
+</script>
+</body>
+</html>
