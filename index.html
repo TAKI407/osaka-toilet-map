@@ -97,7 +97,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP"
 
 /* detail view */
 #detail{display:none}
-#detail .body{padding:14px 16px 8px}
+#dClose{position:absolute;top:8px;right:8px;width:34px;height:34px;border-radius:50%;
+  border:none;background:rgba(0,0,0,.08);color:#333;font-size:15px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2}
+#dClose:active{background:rgba(0,0,0,.18)}
+#detail .body{padding:14px 44px 8px 16px;position:relative}
 #detail .dname{font-size:17px;font-weight:800;line-height:1.3}
 #detail .droma{font-size:12px;color:var(--sub);margin-top:2px}
 #detail .tags{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
@@ -134,7 +138,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP"
 /* toast */
 #toast{position:fixed;top:calc(max(10px, env(safe-area-inset-top)) + 96px);left:50%;transform:translateX(-50%);z-index:40;
   background:var(--sign-deep);color:#fff;font-size:12px;font-weight:600;border-radius:999px;padding:8px 14px;box-shadow:var(--shadow);
-  opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+  opacity:0;transition:opacity .3s;pointer-events:none;max-width:88vw;text-align:center;line-height:1.5}
 #toast.show{opacity:1}
 
 /* map pins */
@@ -195,6 +199,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP"
     <div id="list"></div>
     <div id="detail">
       <div class="body">
+        <button id="dClose" aria-label="Close">✕</button>
         <div class="dname" id="dName"></div>
         <div class="droma" id="dRoma"></div>
         <div class="tags" id="dTags"></div>
@@ -438,7 +443,10 @@ $('accChip').onclick=()=>{accOnly=!accOnly;$('accChip').classList.toggle('on',ac
 
 $('signband').onclick=()=>{ if($('detail').style.display==='block'){closeDetail();} else if(nearest.length){select(nearest[0].i,true);} };
 
-map.on('click',e=>{ $('timePanel').style.display='none'; setMe(e.latlng.lat,e.latlng.lng); closeDetail(); });
+map.on('click',e=>{ $('timePanel').style.display='none';
+  if(selIdx>=0){ closeDetail(); return; }   // パネル表示中は閉じるだけ（現在地を壊さない）
+  setMe(e.latlng.lat,e.latlng.lng); });
+$('dClose').onclick=ev=>{ ev.stopPropagation(); closeDetail(); };
 
 function tryGPS(fromBtn){
   if(!navigator.geolocation){ if(fromBtn)toast(T('gpsng')); return; }
