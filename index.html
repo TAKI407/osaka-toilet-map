@@ -62,7 +62,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP"
 #timePanel .nowbtn{border:0;background:var(--paper);border:1.5px solid var(--line);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;color:var(--sign)}
 
 /* ---- locate FAB ---- */
-#locate{position:fixed;right:12px;z-index:20;width:44px;height:44px;border-radius:12px;border:0;background:#fff;box-shadow:var(--shadow);
+#locate{position:fixed;top:calc(max(10px, env(safe-area-inset-top)) + 104px);right:12px;z-index:20;width:44px;height:44px;border-radius:12px;border:0;background:#fff;box-shadow:var(--shadow);
   display:flex;align-items:center;justify-content:center;cursor:pointer}
 #locate svg{width:22px;height:22px;fill:var(--sign)}
 
@@ -111,6 +111,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP"
 #detail .addr{font-size:12px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 11px;line-height:1.5}
 #detail .addr .cap{font-size:10px;color:var(--sub);font-weight:700;letter-spacing:.05em;display:block;margin-bottom:2px}
 #detail .fx{font-size:11px;color:var(--sub);margin-top:8px;line-height:1.5}
+.note{font-size:12.5px;color:#a15c00;background:#fff4e0;border-radius:8px;padding:6px 10px;margin-top:6px;line-height:1.5}
 #detail .hint{font-size:11px;color:var(--sub);margin-top:8px;display:flex;gap:5px;align-items:flex-start}
 .navrow{display:flex;gap:8px;padding:12px 16px 14px}
 .navbtn{flex:1;border:0;border-radius:12px;padding:14px 10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px}
@@ -205,6 +206,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP"
         <div class="tags" id="dTags"></div>
         <div class="addr"><span class="cap" id="dAddrCap"></span><span id="dAddr"></span></div>
         <div class="fx" id="dFx"></div>
+        <div class="note" id="dNote" style="display:none"></div>
         <div class="verify" id="dVerify" style="display:none"></div>
         <div class="hint">🙏 <span id="dHint"></span></div>
       </div>
@@ -246,7 +248,7 @@ const SHOPS = [
 ["ヨドバシ梅田 LINKS UMEDA","Yodobashi Umeda / LINKS",34.7047,135.4967,1,"大阪市北区大深町1-1","各階 Every floor",570,1320,2],
 ["HEP FIVE","HEP FIVE",34.7043,135.5007,1,"大阪市北区角田町5-15","各階 Every floor",660,1260,2],
 ["ドン・キホーテ梅田本店","Don Quijote Umeda",34.7020,135.5040,0,"大阪市北区小松原町(要確認)","",0,1440,3],
-["なんばウォーク","Namba Walk",34.6663,135.5047,1,"大阪市中央区千日前 地下街","B1F・B8出口付近ほか / incl. near Exit B8",600,1320,1],
+["なんばウォーク","Namba Walk",34.6663,135.5047,1,"大阪市中央区千日前 地下街","B1F・B8出口付近ほか / incl. near Exit B8",600,1320,1,"月1回ペースで設備点検による休業あり／元旦も休業　Closed roughly once a month for maintenance, and on Jan 1"],
 ["ラウンドワンスタジアム千日前(難波)","Round1 Stadium Sennichimae",34.6675,135.5029,0,"大阪市中央区難波1-3-1","館内 In-store",0,1440,3],
 ["御堂筋グランドビル","Midosuji Grand Building",34.6676,135.4998,0,"大阪市中央区難波2-2-3","B1F なんばウォーク24番出口直結 / Namba Walk Exit 24",600,1260,2],
 ["近鉄難波ビル","Kintetsu Namba Building",34.6668,135.4998,0,"大阪市中央区難波4-1-15","B2F 飲食店街 / Restaurant floor B2",600,1260,2],
@@ -296,8 +298,8 @@ const DEMOS = [
 
 /* 統合リスト: {name, roma, lat, lng, wc, addr, fx, type, open, close, floor} */
 const ALL = [];
-TOILETS.forEach(t=>ALL.push({name:t[0],roma:t[1],lat:t[2],lng:t[3],wc:t[4],addr:t[5],fx:t[6],type:0,open:0,close:1440,floor:''}));
-SHOPS.forEach(s=>ALL.push({name:s[0],roma:s[1],lat:s[2],lng:s[3],wc:s[4],addr:s[5],floor:s[6],open:s[7],close:s[8],type:s[9],fx:''}));
+TOILETS.forEach(t=>ALL.push({name:t[0],roma:t[1],lat:t[2],lng:t[3],wc:t[4],addr:t[5],fx:t[6],type:0,open:0,close:1440,floor:'',note:''}));
+SHOPS.forEach(s=>ALL.push({name:s[0],roma:s[1],lat:s[2],lng:s[3],wc:s[4],addr:s[5],floor:s[6],open:s[7],close:s[8],type:s[9],fx:'',note:s[10]||''}));
 
 let lang = (nav => nav.startsWith('ja')?'ja':nav.startsWith('zh')?'zh':nav.startsWith('ko')?'ko':'en')(navigator.language||'en');
 let me = null, accOnly = false, selIdx = -1, markers = [], meMarker = null, circle = null, nearest = [];
@@ -379,7 +381,7 @@ function focusOn(lat,lng,zoom){
   const pt=map.project([lat,lng],zoom).add([0,sh/2]);
   map.setView(map.unproject(pt,zoom),zoom);
 }
-function select(i,openDetail){
+function select(i,openDetail,skipFocus){
   selIdx=i; const it=ALL[i];
   refresh();
   if(openDetail){
@@ -397,6 +399,11 @@ function select(i,openDetail){
     $('dAddrCap').textContent=T('addr');
     $('dAddr').textContent=it.addr + (it.floor?` ｜ ${T('floor')}: ${it.floor}`:'');
     $('dFx').textContent=it.fx?T('fx')+': '+it.fx:'';
+    const nEl=$('dNote');
+    const DEFAULT_NOTE={1:'元旦・不定休あり　Closed on Jan 1 and other irregular days',
+                         2:'元旦など特別休業日あり　May be closed on Jan 1 or other special holidays'};
+    const noteTxt = it.note || DEFAULT_NOTE[it.type] || '';
+    if(noteTxt){ nEl.style.display='block'; nEl.textContent='⚠ '+noteTxt; } else nEl.style.display='none';
     const v=$('dVerify');
     if(it.type>0){ v.style.display='block'; v.textContent=T('verify'); } else v.style.display='none';
     $('dHint').textContent=T('hint');
@@ -404,7 +411,7 @@ function select(i,openDetail){
     $('bandN').textContent = lang==='ja'? it.name : (it.roma||it.name);
     $('bandD').textContent = d?fmtD(d):'—';
     $('bandW').textContent = d?walkMin(d):'';
-    focusOn(it.lat,it.lng,17);
+    if(!skipFocus) focusOn(it.lat,it.lng,17);
     $('navApple').onclick=()=>window.open(`https://maps.apple.com/?daddr=${it.lat},${it.lng}&dirflg=w`,'_blank');
     $('navGoogle').onclick=()=>window.open(`https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}&travelmode=walking`,'_blank');
   }
@@ -441,6 +448,7 @@ function applyLang(){
     `<span><i style="background:#1F8A5B"></i>${T('t3')}</span>`+
     `<span><i style="background:#A8ADB8"></i>${T('closed')}</span>`;
   refresh();
+  if(selIdx>=0 && $('detail').style.display==='block') select(selIdx,true,true); // 開いている詳細も言語を反映（地図は動かさない）
 }
 document.querySelectorAll('#langs button').forEach(b=>b.onclick=()=>{lang=b.dataset.l;applyLang();});
 
